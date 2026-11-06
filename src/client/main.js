@@ -165,7 +165,7 @@ class GameClient {
   }
 
   /**
-   * 가장 가까운 생존 적(또는 파괴 가능한 화약통) 방향 각도를 계산하여 모바일 원탭 공격(Auto-Aim)을 돕습니다.
+   * 가장 가까운 생존 적(또는 파괴 가능한 화약통) 방향 각도를 계산하여 탭 공격(Auto-Aim)을 돕습니다.
    */
   _findNearestEnemyAngle() {
     const snap = this.latestSnapshot;
@@ -179,6 +179,7 @@ class GameClient {
     let bestDistSq = Infinity;
     let bestAngle = null;
 
+    // 1. 가장 가까운 살아있는 적 플레이어 탐색
     for (let i = 0; i < snap.players.length; i++) {
       const other = snap.players[i];
       if (!other.alive || other.id === me.id) continue;
@@ -193,7 +194,22 @@ class GameClient {
       }
     }
 
-    return bestAngle;
+    // 2. 만약 살아있는 적이 없으면 가까운 파괴 가능한 장애물(폭발 화약통/방책) 탐색
+    if (bestAngle === null && snap.obstacles) {
+      for (let i = 0; i < snap.obstacles.length; i++) {
+        const obs = snap.obstacles[i];
+        if (obs.hp <= 0 || !obs.destructible) continue;
+        const dx = obs.x - myX;
+        const dy = obs.y - myY;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestDistSq) {
+          bestDistSq = d2;
+          bestAngle = Math.atan2(dy, dx);
+        }
+      }
+    }
+
+    return bestAngle !== null ? bestAngle : me.aimAngle;
   }
 
   async toggleFullscreen() {

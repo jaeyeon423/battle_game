@@ -382,6 +382,7 @@ export class WebSocketTransport {
     if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
       const now = performance.now();
       const hasTrigger =
+        inputCmd.firePressed ||
         inputCmd.reloadPressed ||
         inputCmd.skill1Pressed ||
         inputCmd.skill2Pressed;

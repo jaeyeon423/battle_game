@@ -1,7 +1,7 @@
 // ============================================================================
-// [Client] 모바일 세로(Portrait) 최적화 트윈 스틱 & 스킬 1·2 통합 컨트롤러
-// - 좌측 하단: 360° 플로팅 이동 조이스틱 (PC: WASD / 방향키)
-// - 우측 하단: 360° 플로팅 조준·공격 조이스틱 (탭 시 가장 가까운 적 자동 조준 / 드래그 시 수동 조준)
+// [Client] 모바일 세로(Portrait) 최적화 트윈 조작계 & 원탭 자동 조준 공격 컨트롤러
+// - 좌측: 360° 플로팅 이동 조이스틱 (PC: WASD / 방향키)
+// - 우측: [⚔️ ATK] 버튼 누를 때마다 가장 가까운 적을 향해 1회 공격 (누르고 있어도 연속 자동발사 안 됨)
 // - 우측 보조 버튼: [🔄 재장전/충전(R)] / [⚡ 기동스킬 1(Shift)] / [💥 필살기 2(E)]
 // ============================================================================
 
@@ -39,21 +39,29 @@ export class InputController {
     this.stickMove = { x: 0, y: 0 };
 
     this.rightPointerId = null;
-    this.rightOrigin = { x: 0, y: 0 };
-    this.stickAim = { active: false, angle: 0, firing: false, dragged: false };
-
-    this.mouseAim = { active: false, x: 0, y: 0, down: false };
-
     this.aimAngle = 0;
-    this.tapFireTimer = 0;
+    this.fireQueued = false;
     this.reloadQueued = false;
     this.skill1Queued = false;
     this.skill2Queued = false;
 
     this.maxStickRadius = 36;
-    this.fireDeadzone = 7;
 
     this._bindEvents();
+  }
+
+  /**
+   * 버튼 1회 터치/클릭당 가장 가까운 적을 향해 1회 공격을 격발합니다.
+   */
+  triggerAttack() {
+    this.onInteract?.();
+    if (this.getAutoAimAngle) {
+      const autoAng = this.getAutoAimAngle();
+      if (typeof autoAng === 'number' && !Number.isNaN(autoAng)) {
+        this.aimAngle = autoAng;
+      }
+    }
+    this.fireQueued = true;
   }
 
   _bindEvents() {
@@ -63,6 +71,13 @@ export class InputController {
       this.onInteract?.();
       const code = e.code;
       this.keys.add(code);
+
+      // 공격 단축키 (KeyJ, KeyF): 1회 누를 때마다 가장 가까운 적에게 1회 공격
+      if (code === 'KeyJ' || code === 'KeyF') {
+        if (!e.repeat) {
+          this.triggerAttack();
+        }
+      }
 
       if (code === 'KeyR') this.reloadQueued = true;
       if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'Space') {
@@ -85,8 +100,7 @@ export class InputController {
     window.addEventListener('blur', () => {
       this.keys.clear();
       this._resetLeftStick();
-      this._resetRightStick();
-      this.mouseAim.down = false;
+      this._resetRightAttackBtn();
     });
 
     // 좌측 이동 조이스틱 (손가락이 닿은 위치를 시작 중심으로 잡는 플로팅 방식)
@@ -114,42 +128,23 @@ export class InputController {
     this.leftZone.addEventListener('pointerup', endLeft);
     this.leftZone.addEventListener('pointercancel', endLeft);
 
-    // 우측 360° 조준·발사 스틱 (원탭 시 자동 조준 & 드래그 시 수동 360° 조준)
+    // 우측 [⚔️ ATK] 공격 버튼
+    // - 버튼을 1번 누를 때마다 가장 가까운 적을 향해 1회 공격 발동!
+    // - 버튼을 꾹 누르고 있어도 연속으로 자동 공격되지 않습니다.
     this.rightZone.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.onInteract?.();
       try {
         this.rightZone.setPointerCapture(e.pointerId);
       } catch {}
       this.rightPointerId = e.pointerId;
-      this.rightOrigin = { x: e.clientX, y: e.clientY };
-      this.stickAim.dragged = false;
-
-      // 터치하는 순간 가장 가까운 적 방향으로 즉시 자동 조준
-      if (this.getAutoAimAngle) {
-        const autoAng = this.getAutoAimAngle();
-        if (typeof autoAng === 'number' && !Number.isNaN(autoAng)) {
-          this.aimAngle = autoAng;
-          this.stickAim.angle = autoAng;
-        }
-      }
-
       this.rightZone.classList.add('active', 'firing');
-      this.stickAim.active = true;
-      this.stickAim.firing = true;
-      this.tapFireTimer = 0.2;
-      this._updateRightStick(e.clientX, e.clientY);
-    });
-
-    this.rightZone.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== this.rightPointerId) return;
-      this._updateRightStick(e.clientX, e.clientY);
+      this.triggerAttack();
     });
 
     const endRight = (e) => {
       if (e.pointerId !== this.rightPointerId) return;
-      this._resetRightStick();
+      this._resetRightAttackBtn();
     };
     this.rightZone.addEventListener('pointerup', endRight);
     this.rightZone.addEventListener('pointercancel', endRight);
@@ -176,31 +171,11 @@ export class InputController {
       this.skill2Queued = true;
     });
 
-    // PC 마우스 전장 조준 및 사격
-    this.canvas.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'touch') return;
-      const rect = this.canvas.getBoundingClientRect();
-      this.mouseAim.active = true;
-      this.mouseAim.x = e.clientX - rect.left;
-      this.mouseAim.y = e.clientY - rect.top;
-    });
-
+    // PC 마우스 좌클릭 (화면 클릭 1회마다 가장 가까운 적을 향해 1회 공격)
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') return;
       if (e.button === 0) {
-        this.onInteract?.();
-        const rect = this.canvas.getBoundingClientRect();
-        this.mouseAim.active = true;
-        this.mouseAim.x = e.clientX - rect.left;
-        this.mouseAim.y = e.clientY - rect.top;
-        this.mouseAim.down = true;
-      }
-    });
-
-    window.addEventListener('pointerup', (e) => {
-      if (e.pointerType === 'touch') return;
-      if (e.button === 0) {
-        this.mouseAim.down = false;
+        this.triggerAttack();
       }
     });
   }
@@ -244,50 +219,12 @@ export class InputController {
     this.leftZone.classList.remove('active');
   }
 
-  _updateRightStick(clientX, clientY) {
-    const dx = clientX - this.rightOrigin.x;
-    const dy = clientY - this.rightOrigin.y;
-    const dist = Math.hypot(dx, dy);
-    const maxR = this.maxStickRadius;
-
-    const clampedDist = Math.min(dist, maxR);
-    const angle = dist >= this.fireDeadzone ? Math.atan2(dy, dx) : this.aimAngle;
-    const kx = dist >= this.fireDeadzone ? Math.cos(angle) * clampedDist : 0;
-    const ky = dist >= this.fireDeadzone ? Math.sin(angle) * clampedDist : 0;
-
-    this.rightKnob.style.transform = `translate(${kx.toFixed(1)}px, ${ky.toFixed(1)}px)`;
-
-    this.stickAim.active = true;
-    this.stickAim.firing = true;
-    this.rightZone.classList.add('firing');
-
-    if (dist >= this.fireDeadzone) {
-      this.stickAim.dragged = true;
-      this.aimAngle = angle;
-      this.stickAim.angle = angle;
-    } else if (!this.stickAim.dragged && this.getAutoAimAngle) {
-      const autoAng = this.getAutoAimAngle();
-      if (typeof autoAng === 'number' && !Number.isNaN(autoAng)) {
-        this.aimAngle = autoAng;
-        this.stickAim.angle = autoAng;
-      }
-    }
-  }
-
-  _resetRightStick() {
+  _resetRightAttackBtn() {
     this.rightPointerId = null;
-    this.stickAim.active = false;
-    this.stickAim.firing = false;
-    this.stickAim.dragged = false;
-    this.rightKnob.style.transform = 'translate(0px, 0px)';
     this.rightZone.classList.remove('active', 'firing');
   }
 
   sampleInputCommand(playerScreenX, playerScreenY, dt = 0.016) {
-    if (this.tapFireTimer > 0) {
-      this.tapFireTimer = Math.max(0, this.tapFireTimer - dt);
-    }
-
     let moveX = this.stickMove.x;
     let moveY = this.stickMove.y;
 
@@ -310,47 +247,24 @@ export class InputController {
       this.leftKnob.style.transform = 'translate(0px, 0px)';
     }
 
-    let isFiring = false;
-    if (this.stickAim.active) {
-      if (!this.stickAim.dragged && this.getAutoAimAngle) {
-        const autoAng = this.getAutoAimAngle();
-        if (typeof autoAng === 'number' && !Number.isNaN(autoAng)) {
-          this.aimAngle = autoAng;
-        }
-      }
-      isFiring = this.stickAim.firing;
-    } else if (this.tapFireTimer > 0) {
-      isFiring = true;
-    } else if (this.mouseAim.active) {
-      const dx = this.mouseAim.x - playerScreenX;
-      const dy = this.mouseAim.y - playerScreenY;
-      if (Math.hypot(dx, dy) > 4) {
-        this.aimAngle = Math.atan2(dy, dx);
-      }
-      isFiring = this.mouseAim.down;
-
-      if (isFiring) {
-        const r = this.maxStickRadius * 0.8;
-        this.rightKnob.style.transform = `translate(${(Math.cos(this.aimAngle) * r).toFixed(1)}px, ${(Math.sin(this.aimAngle) * r).toFixed(1)}px)`;
-        this.rightZone.classList.add('firing');
-      } else {
-        this.rightKnob.style.transform = 'translate(0px, 0px)';
-        this.rightZone.classList.remove('firing');
-      }
-    }
-
-    if ((this.skill1Queued || this.skill2Queued) && !this.stickAim.dragged && !this.mouseAim.active && this.getAutoAimAngle) {
+    // 스킬 시전 시에도 가장 가까운 적을 향하도록 자동 보정
+    if ((this.skill1Queued || this.skill2Queued) && this.getAutoAimAngle) {
       const autoAng = this.getAutoAimAngle();
       if (typeof autoAng === 'number' && !Number.isNaN(autoAng)) {
         this.aimAngle = autoAng;
       }
     }
 
+    const firePressed = this.fireQueued;
+    const isFiring = this.fireQueued;
+    this.fireQueued = false;
+
     const cmd = {
       seq: ++this.seq,
       moveX,
       moveY,
       aimAngle: this.aimAngle,
+      firePressed,
       isFiring,
       reloadPressed: this.reloadQueued,
       skill1Pressed: this.skill1Queued,

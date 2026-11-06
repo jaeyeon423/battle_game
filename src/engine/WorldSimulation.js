@@ -214,6 +214,7 @@ export class WorldSimulation {
       walkCycle: 0,
       aiStrafeDir: this.rng() > 0.5 ? 1 : -1,
       aiStrafeTimer: 1.5,
+      pendingAttack: false,
       isHost: false,
       ready: true,
       preferredClass: !isBot && preferredClass && WEAPON_LOADOUTS[preferredClass] ? preferredClass : '',
@@ -224,6 +225,7 @@ export class WorldSimulation {
       moveX: 0,
       moveY: 0,
       aimAngle: player.aimAngle,
+      firePressed: false,
       isFiring: false,
       reloadPressed: false,
       skill1Pressed: false,
@@ -477,6 +479,7 @@ export class WorldSimulation {
     p.reloadTimer = 0;
     p.reloadDuration = spec.reloadTime;
     p.fireCooldown = 0;
+    p.pendingAttack = false;
     p.skill1Cooldown = 0;
     p.skill1MaxCd = spec.skill1.cooldown;
     p.skill1Name = spec.skill1.name;
@@ -529,6 +532,7 @@ export class WorldSimulation {
       moveX: clamp(Number(inputCmd.moveX) || 0, -1, 1),
       moveY: clamp(Number(inputCmd.moveY) || 0, -1, 1),
       aimAngle: typeof inputCmd.aimAngle === 'number' ? inputCmd.aimAngle : prev.aimAngle,
+      firePressed: prev.firePressed || Boolean(inputCmd.firePressed || inputCmd.attackPressed),
       isFiring: Boolean(inputCmd.isFiring),
       reloadPressed: prev.reloadPressed || Boolean(inputCmd.reloadPressed),
       skill1Pressed: prev.skill1Pressed || s1,
@@ -572,6 +576,7 @@ export class WorldSimulation {
           else p.walkCycle = 0;
           this._clampInsideCircularArena(p);
           this._resolveObstacleCollision(p);
+          inp.firePressed = false;
           inp.reloadPressed = false;
           inp.skill1Pressed = false;
           inp.skill2Pressed = false;
@@ -587,6 +592,7 @@ export class WorldSimulation {
         const inp = this.inputs.get(playerId);
         if (inp) {
           p.aimAngle = inp.aimAngle;
+          inp.firePressed = false;
           inp.reloadPressed = false;
           inp.skill1Pressed = false;
           inp.skill2Pressed = false;
@@ -644,6 +650,7 @@ export class WorldSimulation {
       if (player.alive) {
         this._updatePlayer(player, input, dt);
       }
+      input.firePressed = false;
       input.reloadPressed = false;
       input.skill1Pressed = false;
       input.skill2Pressed = false;
@@ -785,10 +792,59 @@ export class WorldSimulation {
     }
   }
 
+  /**
+   * 플레이어의 탭 공격(Auto-Aim)을 위해 가장 가까운 적(또는 파괴 가능한 장애물)의 각도를 탐색합니다.
+   */
+  _findNearestEnemyAngleForPlayer(p) {
+    let nearestTarget = null;
+    let minD2 = Infinity;
+
+    // 1. 살아있는 다른 플레이어 우선 탐색
+    for (const other of this.players.values()) {
+      if (!other.alive || other.id === p.id) continue;
+      const d2 = distSq(p.x, p.y, other.x, other.y);
+      if (d2 < minD2) {
+        minD2 = d2;
+        nearestTarget = other;
+      }
+    }
+
+    if (nearestTarget) {
+      return Math.atan2(nearestTarget.y - p.y, nearestTarget.x - p.x);
+    }
+
+    // 2. 적 플레이어가 없으면 파괴 가능한 장애물 탐색
+    if (this.obstacles && this.obstacles.length > 0) {
+      for (const obs of this.obstacles) {
+        if (obs.hp <= 0 || !obs.destructible) continue;
+        const d2 = distSq(p.x, p.y, obs.x, obs.y);
+        if (d2 < minD2) {
+          minD2 = d2;
+          nearestTarget = obs;
+        }
+      }
+      if (nearestTarget) {
+        return Math.atan2(nearestTarget.y - p.y, nearestTarget.x - p.x);
+      }
+    }
+
+    return null;
+  }
+
   _updatePlayer(p, input, dt) {
     const spec = resolveWeaponSpec(p.classId);
 
-    p.aimAngle = input.aimAngle;
+    // [원탭 자동 조준 공격] 유저가 공격 버튼을 1회 누를 때 가장 가까운 적을 향해 자동 조준
+    if (input.firePressed && !p.isBot) {
+      const autoAngle = this._findNearestEnemyAngleForPlayer(p);
+      if (typeof autoAngle === 'number' && !Number.isNaN(autoAngle)) {
+        p.aimAngle = autoAngle;
+      } else {
+        p.aimAngle = input.aimAngle;
+      }
+    } else {
+      p.aimAngle = input.aimAngle;
+    }
     p.isFiring = input.isFiring;
 
     if (p.fireCooldown > 0) p.fireCooldown = Math.max(0, p.fireCooldown - dt);
@@ -798,6 +854,17 @@ export class WorldSimulation {
     if (p.invulnTimer > 0) p.invulnTimer = Math.max(0, p.invulnTimer - dt);
     if (p.swingVisualTimer > 0) p.swingVisualTimer = Math.max(0, p.swingVisualTimer - dt);
     if (p.whirlwindTimer > 0) p.whirlwindTimer = Math.max(0, p.whirlwindTimer - dt);
+
+    // 쿨다운 종료 직전(<=0.20초) 탭 연타 시 씹힘 방지 버퍼링
+    if (input.firePressed && !p.isBot) {
+      if (p.fireCooldown > 0 && p.fireCooldown <= 0.20 && !p.isReloading) {
+        p.pendingAttack = true;
+      }
+    }
+
+    // 공격 의사 판정: 유저는 버튼을 누를 때마다(firePressed) 또는 버퍼링된 1회 탭(pendingAttack)에 의해 격발되며,
+    // 버튼을 꾹 누르고 있어도 연속 자동 발사되지 않습니다. (AI 봇은 isFiring 상태로 공격)
+    const wantAttack = (!p.isBot ? (input.firePressed || (p.pendingAttack && p.fireCooldown <= 0)) : input.isFiring);
 
     // ========================================================================
     // [⚡ 무기별 기동 스킬 1 발동] (Shift / Space / 스킬 1 버튼)
@@ -1052,9 +1119,10 @@ export class WorldSimulation {
     // [1. ⚔️ 전사 (Warrior)]: 완전한 근접 베기 (원거리 투사체 절대 없음!)
     // ========================================================================
     if (spec.isMelee) {
-      if (input.isFiring && p.fireCooldown <= 0 && !p.isReloading) {
+      if (wantAttack && p.fireCooldown <= 0 && !p.isReloading) {
         const cost = spec.costPerShot || 20;
         if (p.ammo >= cost) {
+          p.pendingAttack = false;
           p.ammo -= cost;
           p.fireCooldown = spec.fireInterval;
           p.swingDuration = 0.28;
@@ -1070,8 +1138,9 @@ export class WorldSimulation {
     // [2. 🏹 궁수 (Archer)]: 초장거리 일격필살 1발 저격 & 1.5초 장전 필수
     // ========================================================================
     if (spec.id === 'archer' || spec.id === 'bow' || spec.id === 'crossbow') {
-      if (input.isFiring && p.fireCooldown <= 0 && !p.isReloading) {
+      if (wantAttack && p.fireCooldown <= 0 && !p.isReloading) {
         if (p.ammo >= 1) {
+          p.pendingAttack = false;
           p.ammo = 0;
           p.fireCooldown = spec.fireInterval;
           p.swingVisualTimer = 0.16;
@@ -1104,8 +1173,9 @@ export class WorldSimulation {
     // [3. 🔮 마법사 (Mage)]: 원거리 제어 마법탄 (궁수보다 낮은 데미지 + 둔화/화상 DoT)
     // ========================================================================
     const cost = spec.costPerShot || 18;
-    if (input.isFiring && p.fireCooldown <= 0 && !p.isReloading) {
+    if (wantAttack && p.fireCooldown <= 0 && !p.isReloading) {
       if (p.ammo >= cost) {
+        p.pendingAttack = false;
         p.ammo -= cost;
         p.fireCooldown = spec.fireInterval;
         p.swingVisualTimer = 0.15;

@@ -91,6 +91,45 @@ assert.ok(mageSpec.bulletSplashRadius >= 70, '마법사는 광역 폭발 범위�
 
 console.log('✔ [PASS] 3대 판타지 클래스(전사·궁수·마법사) 밸런스 규칙 검증 완료');
 
+// [단발 탭 공격 및 가장 가까운 적 자동 조준 검증]
+const autoAimSim = new WorldSimulation(42);
+autoAimSim.roundState = 'combat';
+const testHero = autoAimSim.addPlayer('test_hero', 'archer', 'HERO-TAP', false);
+const targetEnemy = autoAimSim.addPlayer('test_bot', 'warrior', 'BOT-TARGET', true);
+testHero.x = 800;
+testHero.y = 800;
+testHero.aimAngle = 0; // 초기 각도는 0도 (오른쪽)
+targetEnemy.x = 800;
+targetEnemy.y = 1000; // 적은 영웅 바로 아래쪽 (+90도 = PI/2)
+
+// 1. 공격 버튼 1회 탭(firePressed: true): 가장 가까운 적(아래쪽 PI/2)을 향해 자동 조준 & 화살 발사
+autoAimSim.applyInput('test_hero', {
+  firePressed: true,
+  isFiring: true,
+  aimAngle: 0,
+});
+autoAimSim.step(1 / 60);
+
+const expectedAngle = Math.atan2(targetEnemy.y - testHero.y, targetEnemy.x - testHero.x);
+assert.ok(
+  Math.abs(testHero.aimAngle - expectedAngle) < 0.05,
+  `탭 공격 시 가장 가까운 적을 향해 자동 조준되어야 합니다. (실제: ${testHero.aimAngle}, 기대: ${expectedAngle})`
+);
+assert.equal(testHero.ammo, 0, '화살이 1회 발사되어 탄약이 소진되어야 합니다.');
+
+// 2. 공격 버튼을 꾹 누르고 있는 상태(firePressed: false, isFiring: true): 자동 연속 발사 차단 검증
+testHero.fireCooldown = 0;
+testHero.isReloading = false;
+testHero.ammo = 1; // 재장전 완료 상태
+autoAimSim.applyInput('test_hero', {
+  firePressed: false, // 손가락을 떼지 않고 누르고만 있음
+  isFiring: true,
+  aimAngle: expectedAngle,
+});
+autoAimSim.step(1 / 60);
+assert.equal(testHero.ammo, 1, '버튼을 꾹 누르고 있어도 1회 탭(firePressed) 없이는 자동 연속 발사되지 않아야 합니다.');
+console.log('✔ [PASS] 원탭 자동 조준 공격 및 홀드 시 연속 발사 차단 메커니즘 검증 완료');
+
 // 새 라운드 시작 후 최후의 1인 시뮬레이션 검증
 sim.startNewRound();
 for (let i = 0; i < 60 * (WORLD_CONFIG.ROULETTE_DURATION + 0.2); i++) sim.step(1 / 60);
@@ -115,7 +154,8 @@ for (let i = 0; i < 60 * 200; i++) {
         moveX: Math.cos(ang) * 0.5,
         moveY: Math.sin(ang) * 0.5,
         aimAngle: ang,
-        isFiring: i % 30 < 22,
+        firePressed: i % 30 === 0,
+        isFiring: i % 30 === 0,
         skill1Pressed: i % 90 === 0,
         skill2Pressed: i % 120 === 0,
       });
