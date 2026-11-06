@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>CIRCLE ROYALE · 원형 배틀로얄 (랜덤 무기 박스 서바이벌)</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>CIRCLE ROYALE · 모바일 판타지 멀티플레이 결투</title>
   <link rel="stylesheet" href="./css/style.css" />
 </head>
 <body>
@@ -11,13 +13,13 @@
     <!-- 메인 도트 픽셀 원형 경기장 캔버스 -->
     <canvas id="arenaCanvas" aria-label="원형 배틀로얄 경기장"></canvas>
 
-    <!-- 상단 전술 HUD -->
+    <!-- 상단 전술 HUD (모바일 가로화면 최적화) -->
     <header class="hud-top">
-      <!-- 좌측 상단: 내 상태 & 참가 생존자 현황(8인) -->
+      <!-- 좌측 상단: 내 상태 & 참가 생존자 현황 -->
       <section class="hud-card soldier-status" aria-label="내 상태 및 생존자 현황">
         <div class="status-header">
-          <span class="callsign" id="heroTitleText">🎲 SOLDIER-01 · 랜덤 무기</span>
-          <span class="lv-badge" id="tierBadgeText">RARE</span>
+          <span class="callsign clickable-name" id="heroTitleText" title="터치하여 내 닉네임 변경">⚔️ HERO-01 · 기동 돌격 전사</span>
+          <span class="lv-badge" id="tierBadgeText">EPIC</span>
         </div>
 
         <div class="bar-row">
@@ -25,15 +27,15 @@
           <div class="bar-track">
             <div class="bar-fill hp-fill" id="hpFill" style="width: 100%"></div>
           </div>
-          <span class="bar-value" id="hpText">200 / 200</span>
+          <span class="bar-value" id="hpText">580 / 580</span>
         </div>
 
         <div class="bar-row">
-          <span class="bar-label" id="ammoLabel">AMMO</span>
+          <span class="bar-label" id="ammoLabel">STAM</span>
           <div class="bar-track">
             <div class="bar-fill ammo-fill" id="ammoFill" style="width: 100%"></div>
           </div>
-          <span class="bar-value" id="ammoText">30 / 30</span>
+          <span class="bar-value" id="ammoText">100 / 100</span>
         </div>
 
         <div class="bar-row">
@@ -41,30 +43,30 @@
           <div class="bar-track">
             <div class="bar-fill base-fill" id="baseFill" style="width: 100%"></div>
           </div>
-          <span class="bar-value" id="baseText">680m</span>
+          <span class="bar-value" id="baseText">700m</span>
         </div>
 
-        <!-- 원형 경기장 생존자 로스터 (최후의 1인 추적) -->
+        <!-- 원형 경기장 생존자 로스터 -->
         <div class="squad-roster" id="squadRoster"></div>
       </section>
 
-      <!-- 중앙 상단: 온라인 룸 & 생존 인원(ALIVE) & 자기장 상태 -->
+      <!-- 중앙 상단: 온라인 방 & 생존 인원(ALIVE) & 라운드 상태 -->
       <div class="center-stack">
         <section class="hud-card mission-center" aria-label="배틀로얄 라운드 현황">
           <div class="metric">
-            <span class="metric-label">ONLINE ARENA</span>
+            <span class="metric-label">ROOM</span>
             <span class="metric-val online-badge" id="roomStatusText">🟢 ROYALE-01 (1P)</span>
           </div>
           <div class="metric">
-            <span class="metric-label">ROUND</span>
-            <span class="metric-val wave" id="waveText">ROUND 01</span>
+            <span class="metric-label">STATE</span>
+            <span class="metric-val wave" id="waveText">대기실</span>
           </div>
           <div class="metric">
-            <span class="metric-label">ALIVE (생존)</span>
-            <span class="metric-val alive-count" id="aliveText">8 / 8</span>
+            <span class="metric-label">ALIVE</span>
+            <span class="metric-val alive-count" id="aliveText">2 / 2</span>
           </div>
           <div class="metric">
-            <span class="metric-label">KILLS / WINS</span>
+            <span class="metric-label">SCORE</span>
             <span class="metric-val kills" id="killText">0K · 0W</span>
           </div>
         </section>
@@ -73,55 +75,263 @@
         <div class="kill-feed" id="killFeedBox"></div>
       </div>
 
-      <!-- 우측 상단: 랜덤박스 다시 뽑기 & 새 라운드 & 설정 -->
-      <nav class="hud-tools" aria-label="설정 및 테스트">
-        <button type="button" class="tool-btn highlight-btn" id="rerollBoxBtn">🎁 랜덤박스 다시 뽑기 (B)</button>
-        <button type="button" class="tool-btn" id="newRoundBtn">🔄 새 라운드 시작 (8인 전원 추첨)</button>
-        <button type="button" class="tool-btn" id="roomChangeBtn">📡 경기장 변경 (ROYALE-01)</button>
+      <!-- 우측 상단: 멀티플레이 방 목록 / 닉네임 / 대기실 / 사운드 버튼 -->
+      <nav class="hud-tools" aria-label="멀티플레이 메뉴 및 설정">
+        <button type="button" class="tool-btn highlight-btn" id="roomChangeBtn">🏠 방 목록 / 방 만들기</button>
+        <button type="button" class="tool-btn" id="nicknameBtn">✏️ 닉네임: HERO-01</button>
+        <button type="button" class="tool-btn" id="rerollBoxBtn">🎲 직업 변경 (B)</button>
+        <button type="button" class="tool-btn" id="newRoundBtn">👑 대기실 / 재시작</button>
         <button type="button" class="tool-btn" id="soundBtn">🔊 사운드 ON</button>
       </nav>
     </header>
 
+    <!-- ====================================================================== -->
+    <!-- [서비스 핵심 0] 최초 접속 로그인 / 회원가입 화면 (#authOverlay) -->
+    <!-- ====================================================================== -->
+    <section class="auth-overlay" id="authOverlay" aria-live="polite">
+      <div class="auth-modal">
+        <div class="auth-brand">
+          <span class="auth-badge">⚔️ FANTASY BATTLE ROYALE</span>
+          <h1>CIRCLE ROYALE</h1>
+          <p>모바일 1대1 & 배틀로얄 실시간 멀티플레이 결투장</p>
+        </div>
+
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab-btn active" id="tabLoginBtn" data-mode="login">🔑 로그인</button>
+          <button type="button" class="auth-tab-btn" id="tabSignupBtn" data-mode="signup">📝 회원가입</button>
+        </div>
+
+        <div class="auth-form">
+          <label class="rb-field">
+            <span>아이디 (ID)</span>
+            <input type="text" id="authUsernameInput" maxlength="16" placeholder="아이디 입력 (예: hero01)" autocomplete="username" />
+          </label>
+
+          <label class="rb-field">
+            <span>비밀번호 (Password)</span>
+            <input type="password" id="authPasswordInput" maxlength="20" placeholder="비밀번호 입력 (인증 없이 자유 입력)" autocomplete="current-password" />
+          </label>
+
+          <label class="rb-field hidden" id="authNicknameField">
+            <span>인게임 닉네임 (결투장 표시 이름)</span>
+            <div class="nickname-edit-row">
+              <input type="text" id="authNicknameInput" maxlength="12" placeholder="닉네임 입력 (미입력 시 자동 생성)" />
+              <button type="button" id="authRandomNickBtn" title="판타지 닉네임 추천">🎲</button>
+            </div>
+          </label>
+
+          <p class="auth-status-msg" id="authStatusMsg">별도 본인인증 없이 아이디만 입력하면 즉시 로그인/가입됩니다.</p>
+
+          <button type="button" class="start-game-primary-btn auth-submit-btn" id="authSubmitBtn">
+            🚀 로그인하고 방 목록 입장
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- [멀티플레이 핵심 1] 방 대기실 (Waiting Room) & 방장 게임 시작 오버레이 -->
+    <!-- ====================================================================== -->
+    <section class="waiting-room-overlay hidden" id="waitingRoomOverlay" aria-live="polite">
+      <div class="waiting-room-modal">
+        <!-- 상단 방 정보 헤더 -->
+        <div class="wait-header">
+          <div class="wait-title-group">
+            <span class="room-code-pill" id="waitRoomCodeBadge">방 코드: ROYALE-01</span>
+            <h2 id="waitRoomTitleText">공식 1번 결투장</h2>
+          </div>
+          <div class="wait-header-actions">
+            <button type="button" class="lobby-nav-btn" id="openRoomBrowserBtn">📋 방 목록으로 나가기</button>
+          </div>
+        </div>
+
+        <!-- 중단: 좌측 참가자 목록 & 우측 내 캐릭터/직업 설정 -->
+        <div class="wait-body-grid">
+          <!-- 좌측: 현재 방 참가 플레이어 목록 -->
+          <div class="wait-panel">
+            <div class="wait-panel-header">
+              <span>👥 참가 플레이어 (<b id="waitPlayerCountText">1 / 4명</b>)</span>
+              <span class="bot-status-tag" id="waitBotStatusTag">🤖 1인 시작 시 AI 상대 자동 참가</span>
+            </div>
+            <div class="wait-player-list" id="waitingPlayerList"></div>
+          </div>
+
+          <!-- 우측: 내 닉네임 및 클래스(전사/궁수/마법사/랜덤) 선택 -->
+          <div class="wait-panel">
+            <div class="wait-panel-header">
+              <span>⚔️ 내 닉네임 & 직업 선택</span>
+            </div>
+
+            <div class="nickname-edit-row">
+              <input type="text" id="waitNicknameInput" maxlength="12" placeholder="내 닉네임 입력 (최대 12자)" />
+              <button type="button" id="randomNicknameBtn" title="판타지 닉네임 자동 추천">🎲</button>
+              <button type="button" id="saveNicknameBtn">이름 적용</button>
+            </div>
+
+            <div class="wait-class-grid" id="waitClassGrid">
+              <button type="button" class="wait-class-btn selected" data-class="random">
+                <span class="wc-icon">🎲</span>
+                <b>랜덤 무기 박스</b>
+                <small>시작 시 무작위 추첨</small>
+              </button>
+              <button type="button" class="wait-class-btn" data-class="warrior">
+                <span class="wc-icon">⚔️</span>
+                <b>기동 돌격 전사</b>
+                <small>근접 참격 · 고속 · HP 580</small>
+              </button>
+              <button type="button" class="wait-class-btn" data-class="archer">
+                <span class="wc-icon">🏹</span>
+                <b>엘프 저격 궁수</b>
+                <small>원거리 125뎀 · 1발 장전</small>
+              </button>
+              <button type="button" class="wait-class-btn" data-class="mage">
+                <span class="wc-icon">🔮</span>
+                <b>원소 제어 마법사</b>
+                <small>둔화 40% · 화상 · 폭발</small>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단: 방장 전용 게임 시작 컨트롤 / 게스트 준비 버튼 -->
+        <div class="wait-footer">
+          <!-- 방장(Host)에게만 보이는 컨트롤 바 -->
+          <div class="host-action-bar" id="hostActionBar">
+            <div class="host-config-group">
+              <span class="host-crown-badge">👑 내가 방장</span>
+              <button type="button" class="config-pill-btn" id="botModeToggleBtn">🤖 AI 봇: 자동(1인용)</button>
+              <button type="button" class="config-pill-btn" id="maxPlayersToggleBtn">👥 정원: 4명</button>
+            </div>
+            <button type="button" class="start-game-primary-btn" id="hostStartBtn">
+              🚀 게임 시작하기 (START)
+            </button>
+          </div>
+
+          <!-- 일반 참가자(Guest)에게 보이는 준비 바 -->
+          <div class="guest-action-bar hidden" id="guestActionBar">
+            <span class="guest-wait-hint" id="guestWaitHint">⏳ 방장(👑)이 게임을 시작하기를 기다리는 중...</span>
+            <button type="button" class="ready-toggle-btn" id="guestReadyBtn">
+              ✅ 준비 완료 (READY)
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- [서비스 핵심 1] 로그인 직후 표시되는 전체 방 리스트 로비 (#roomBrowserOverlay) -->
+    <!-- ====================================================================== -->
+    <section class="room-browser-overlay hidden" id="roomBrowserOverlay" aria-live="polite">
+      <div class="room-browser-modal">
+        <div class="rb-header">
+          <div class="rb-title-group">
+            <h2>📡 실시간 결투장 방 목록</h2>
+            <span class="user-profile-pill" id="lobbyUserProfileText">👤 게스트</span>
+          </div>
+          <div class="rb-header-actions">
+            <button type="button" class="rb-refresh-btn" id="refreshRoomsBtn">🔄 새로고침</button>
+            <button type="button" class="create-room-top-btn" id="openCreateRoomModalBtn">➕ 방 만들기</button>
+            <button type="button" class="rb-close-btn" id="logoutBtn" title="로그아웃하고 로그인 화면으로">🚪 로그아웃</button>
+            <button type="button" class="rb-close-btn hidden" id="closeRoomBrowserBtn">✖ 닫기</button>
+          </div>
+        </div>
+
+        <!-- 전체 폭으로 깔끔하게 쭉 보여주는 방 리스트 영역 -->
+        <div class="rb-full-list-container">
+          <div class="rb-room-list full-width" id="activeRoomList"></div>
+
+          <div class="rb-direct-join">
+            <input type="text" id="joinCodeInput" maxlength="16" placeholder="방 코드 직접 입력 (예: ROYALE-01, ROOM-101)" />
+            <button type="button" id="joinByCodeBtn">🔑 코드로 바로 입장</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- [서비스 핵심 2] 우측 상단 [➕ 방 만들기] 클릭 시 열리는 방 생성 모달 (#createRoomOverlay) -->
+    <!-- ====================================================================== -->
+    <section class="create-room-overlay hidden" id="createRoomOverlay" aria-live="polite">
+      <div class="create-room-modal">
+        <div class="rb-header">
+          <h2>👑 새 결투장 방 만들기 (내가 방장)</h2>
+          <button type="button" class="rb-close-btn" id="closeCreateRoomModalBtn">✖ 취소</button>
+        </div>
+
+        <label class="rb-field">
+          <span>방 제목</span>
+          <input type="text" id="createRoomNameInput" maxlength="20" placeholder="예: 초보만 오세요 1대1 결투!" />
+        </label>
+
+        <div class="rb-field">
+          <span>최대 인원</span>
+          <div class="rb-option-row" id="createMaxPlayersRow">
+            <button type="button" class="rb-opt-btn selected" data-max="2">2명 (1:1 결투)</button>
+            <button type="button" class="rb-opt-btn" data-max="4">4명 (개인전)</button>
+            <button type="button" class="rb-opt-btn" data-max="8">8명 (배틀로얄)</button>
+          </div>
+        </div>
+
+        <div class="rb-field">
+          <span>빈자리 AI 봇 설정</span>
+          <div class="rb-option-row" id="createBotModeRow">
+            <button type="button" class="rb-opt-btn selected" data-bot="auto">자동 (1인 시 봇)</button>
+            <button type="button" class="rb-opt-btn" data-bot="off">유저끼리만 (봇 없음)</button>
+            <button type="button" class="rb-opt-btn" data-bot="on">빈자리 봇 채움</button>
+          </div>
+        </div>
+
+        <button type="button" class="create-room-submit-btn" id="createRoomConfirmBtn">
+          🚀 방 만들고 방장으로 입장하기
+        </button>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- [멀티플레이 핵심 3] 언제든 열 수 있는 닉네임 변경 모달 (#nicknameOverlay) -->
+    <!-- ====================================================================== -->
+    <section class="nickname-overlay hidden" id="nicknameOverlay" aria-live="polite">
+      <div class="nickname-modal">
+        <div class="rb-header">
+          <h2>✏️ 내 닉네임 설정</h2>
+          <button type="button" class="rb-close-btn" id="closeNicknameModalBtn">✖ 닫기</button>
+        </div>
+        <p class="nick-modal-desc">결투장과 대기실에서 다른 플레이어에게 표시될 이름을 입력하세요. (한글/영문/숫자 최대 12자)</p>
+        <div class="nickname-edit-row">
+          <input type="text" id="modalNicknameInput" maxlength="12" placeholder="닉네임 입력 (예: 아서스, 신궁엘프)" />
+          <button type="button" id="modalRandomNickBtn" title="멋진 판타지 닉네임 무작위 생성">🎲 랜덤 추천</button>
+        </div>
+        <button type="button" class="start-game-primary-btn" id="confirmNicknameModalBtn">
+          ✅ 닉네임 저장 및 적용
+        </button>
+      </div>
+    </section>
+
     <!-- [핵심 연출 1] 라운드 시작 시 화면 중앙에 뜨는 랜덤 무기 박스(룰렛) 모달 -->
-    <section class="random-box-overlay" id="randomBoxOverlay" aria-live="polite">
+    <section class="random-box-overlay hidden" id="randomBoxOverlay" aria-live="polite">
       <div class="random-box-modal">
         <div class="box-header">
           <span class="box-badge" id="boxRoundBadge">ROUND 01 · BATTLE ROYALE</span>
           <h2>🎁 RANDOM WEAPON BOX</h2>
-          <p id="boxSubText">원형 경기장 생존용 무작위 총기를 추첨하고 있습니다...</p>
+          <p id="boxSubText">원형 경기장 결투용 판타지 직업을 추첨하고 있습니다...</p>
         </div>
 
-        <!-- 6종 총기 슬롯 룰렛 그리드 -->
+        <!-- 3대 판타지 클래스 룰렛 그리드 -->
         <div class="roulette-grid" id="rouletteGrid">
-          <div class="roulette-item" data-weapon="rifle">
-            <span class="r-icon">🔫</span>
-            <b>AR-15 돌격소총</b>
-            <small>30발 연사 · M203 유탄</small>
+          <div class="roulette-item" data-weapon="warrior">
+            <span class="r-icon">⚔️</span>
+            <b>기동 돌격 전사</b>
+            <small>근접 참격 (원거리 불가) · 고속 이동 · HP 580</small>
           </div>
-          <div class="roulette-item" data-weapon="shotgun">
-            <span class="r-icon">💥</span>
-            <b>M870 전술 산탄총</b>
-            <small>6펠릿 산탄 · 드래곤 브레스</small>
+          <div class="roulette-item" data-weapon="archer">
+            <span class="r-icon">🏹</span>
+            <b>엘프 저격 궁수</b>
+            <small>초장거리 저격 · 대미지 125 · 1발 장전 (1.5s)</small>
           </div>
-          <div class="roulette-item" data-weapon="lmg">
-            <span class="r-icon">🔥</span>
-            <b>M249 중기관총</b>
-            <small>80발 탄통 · 탄막 난사</small>
-          </div>
-          <div class="roulette-item" data-weapon="sniper">
-            <span class="r-icon">🎯</span>
-            <b>AWM 대물저격총</b>
-            <small>초장거리 · 레일건 저격</small>
-          </div>
-          <div class="roulette-item" data-weapon="launcher">
-            <span class="r-icon">🚀</span>
-            <b>M32 유탄발사기</b>
-            <small>40mm 광역폭발 · 네이팜</small>
-          </div>
-          <div class="roulette-item" data-weapon="smg">
-            <span class="r-icon">⚡</span>
-            <b>KRISS 쌍기관단총</b>
-            <small>초고속 2연발 · 360° 스톰</small>
+          <div class="roulette-item" data-weapon="mage">
+            <span class="r-icon">🔮</span>
+            <b>원소 제어 마법사</b>
+            <small>원거리 제어 · 대미지 42 · 둔화 40% + 화상 DoT</small>
           </div>
         </div>
 
@@ -138,50 +348,54 @@
     <section class="winner-overlay hidden" id="winnerOverlay" aria-live="assertive">
       <div class="winner-modal">
         <div class="winner-crown">🏆 LAST MAN STANDING 🏆</div>
-        <h2 id="winnerNameText">SOLDIER-01</h2>
-        <p class="winner-weapon" id="winnerWeaponText">획득 무기: 🎯 AWM 대물저격총 · 처치: 4킬</p>
-        <p class="winner-next" id="winnerNextText">잠시 후 다음 라운드 랜덤박스가 시작됩니다...</p>
+        <h2 id="winnerNameText">HERO-01</h2>
+        <p class="winner-weapon" id="winnerWeaponText">획득 무기: ⚔️ 기동 돌격 전사 · 처치: 1킬</p>
+        <p class="winner-next" id="winnerNextText">잠시 후 대기실로 복귀합니다...</p>
+        <div class="winner-actions">
+          <button type="button" class="winner-btn primary" id="winnerRestartBtn">🚀 바로 재경기 시작 (방장)</button>
+          <button type="button" class="winner-btn" id="winnerToLobbyBtn">🏠 대기실로 돌아가기</button>
+        </div>
       </div>
     </section>
 
-    <!-- 하단 가로모드 트윈 스틱 & 총기별 전술 스킬 버튼 레이어 -->
+    <!-- 하단 가로모드 모바일 트윈 스틱 & 무기별 스킬 버튼 레이어 -->
     <section class="controls-layer" aria-label="전술 조작계">
       <!-- 좌측 하단: 360도 이동 스틱 -->
-      <div class="stick-zone left-stick" id="leftStickZone" title="드래그하여 이동 (PC: WASD)">
+      <div class="stick-zone left-stick" id="leftStickZone" title="드래그하여 이동">
         <div class="stick-ring"></div>
         <div class="stick-knob" id="leftStickKnob">MOVE</div>
-        <span class="stick-caption">이동 (WASD)</span>
+        <span class="stick-caption">이동</span>
       </div>
 
-      <!-- 우측 하단 보조 버튼 3종: [탄창교체(R)] / [전술스킬 1(Shift)] / [화력스킬 2(E)] -->
-      <button type="button" class="action-btn reload-btn" id="reloadBtn" title="수동 탄창 교체 (R)">
+      <!-- 우측 하단 보조 버튼 3종: [재장전(R)] / [기동스킬 1(Shift)] / [필살스킬 2(E)] -->
+      <button type="button" class="action-btn reload-btn" id="reloadBtn" title="수동 재장전 / 충전 (R)">
         <span class="btn-icon">🔄</span>
-        <span class="btn-name" id="reloadBtnName">탄창교체</span>
+        <span class="btn-name" id="reloadBtnName">재장전</span>
         <span class="btn-key">R</span>
       </button>
 
-      <button type="button" class="action-btn skill1-btn" id="skill1Btn" title="전술 기동 스킬 1 (Shift / Space)">
+      <button type="button" class="action-btn skill1-btn" id="skill1Btn" title="기동 스킬 1 (Shift / Space)">
         <span class="btn-icon">⚡</span>
-        <span class="btn-name" id="skill1Name">전술 구르기</span>
+        <span class="btn-name" id="skill1Name">기동 스킬</span>
         <span class="btn-key" id="skill1CdText">SHIFT</span>
       </button>
 
-      <button type="button" class="action-btn skill2-btn" id="skill2Btn" title="총기 특수 화력 스킬 2 (E / Q)">
+      <button type="button" class="action-btn skill2-btn" id="skill2Btn" title="무기 필살 스킬 2 (E / Q)">
         <span class="btn-icon">💥</span>
-        <span class="btn-name" id="skill2Name">특수 화력</span>
+        <span class="btn-name" id="skill2Name">필살기</span>
         <span class="btn-key" id="skill2CdText">KEY E</span>
       </button>
 
       <!-- 우측 하단: 360도 수동 조준 및 사격 스틱 -->
-      <div class="stick-zone right-stick" id="rightStickZone" title="기울이는 방향으로 360° 조준 및 사격">
+      <div class="stick-zone right-stick" id="rightStickZone" title="기울이는 방향으로 360° 조준 및 공격">
         <div class="stick-ring"></div>
-        <div class="stick-knob" id="rightStickKnob">FIRE</div>
-        <span class="stick-caption">360° 조준·사격</span>
+        <div class="stick-knob" id="rightStickKnob">ATK</div>
+        <span class="stick-caption">360° 조준·공격</span>
       </div>
 
-      <!-- 하단 중앙 조작 안내 -->
+      <!-- 하단 중앙 조작 안내 (PC 화면에서만 노출, 모바일에서는 자동 숨김) -->
       <div class="bottom-guide">
-        <b>WASD</b>: 이동 · <b>우측스틱/좌클릭</b>: 사격 · <b>Shift</b>: 전술기동 · <b>E</b>: 특수화력 · <b>R</b>: 재장전 · <b>B</b>: 랜덤박스 다시뽑기
+        <b>WASD</b>: 이동 · <b>우측스틱/좌클릭</b>: 공격 · <b>Shift</b>: 기동스킬 · <b>E</b>: 필살기 · <b>R</b>: 재장전/명상
       </div>
     </section>
   </main>

@@ -1,5 +1,6 @@
 // ============================================================================
 // [Transport] 원형 배틀로얄 실시간 온라인 멀티플레이 WebSocket 통신 어댑터
+// - 방 생성(createRoom), 방 입장(joinRoom), 방장 게임 시작(hostStartGame), 대기실/레디/설정 동기화
 // ============================================================================
 
 import { WorldSimulation } from '../engine/WorldSimulation.js';
@@ -8,30 +9,42 @@ import { lerp } from '../shared/math.js';
 export class WebSocketTransport {
   constructor() {
     this.fallbackSim = new WorldSimulation();
+    this.fallbackSim.returnToWaitingAfterRound = true;
+    this.fallbackSim.enterWaitingRoom();
+
     this.localPlayerId = 'p_local_1';
     this.roomId = 'ROYALE-01';
+    this.roomName = '공식 1번 결투장';
+    this.hostId = 'p_local_1';
     this.onlineCount = 1;
+    this.maxPlayers = 4;
     this.isOnline = false;
 
     this.ws = null;
     this.stateCallback = null;
     this.statusCallback = null;
+    this.roomListCallback = null;
+    this.authCallback = null;
+    this.authErrorCallback = null;
+    this.autoJoinOnOpen = false;
 
     this.serverSnapshot = null;
     this.displaySnapshot = null;
     this.lastSendTime = 0;
   }
 
-  connect(playerName = '', classId = '', roomId = 'ROYALE-01') {
-    this.roomId = roomId || 'ROYALE-01';
-    this.playerName = playerName;
-    this.preferredClass = classId; // 빈 문자열이면 서버/엔진이 랜덤박스에서 무작위 추첨!
+  connect(playerName = '', classId = '', roomId = 'ROYALE-01', autoJoin = false) {
+    this.roomId = roomId || '';
+    this.playerName = playerName || 'HERO-01';
+    this.preferredClass = classId;
+    this.autoJoinOnOpen = Boolean(autoJoin);
 
     this.fallbackSim.addPlayer(
       this.localPlayerId,
       classId || '',
-      playerName || 'SOLDIER-01'
+      this.playerName
     );
+    this.fallbackSim.enterWaitingRoom();
     this.displaySnapshot = this.fallbackSim.getStateSnapshot();
 
     this._connectWebSocket();
@@ -47,14 +60,18 @@ export class WebSocketTransport {
       this.ws = ws;
 
       ws.addEventListener('open', () => {
-        ws.send(
-          JSON.stringify({
-            type: 'join',
-            roomId: this.roomId,
-            name: this.playerName,
-            classId: this.preferredClass,
-          })
-        );
+        if (this.autoJoinOnOpen && this.roomId) {
+          ws.send(
+            JSON.stringify({
+              type: 'join',
+              roomId: this.roomId,
+              name: this.playerName,
+              classId: this.preferredClass,
+            })
+          );
+        } else {
+          ws.send(JSON.stringify({ type: 'list_rooms' }));
+        }
       });
 
       ws.addEventListener('message', (ev) => {
@@ -64,14 +81,27 @@ export class WebSocketTransport {
             this.isOnline = true;
             this.localPlayerId = msg.playerId;
             this.roomId = msg.roomId;
+            this.roomName = msg.roomName || msg.roomId;
+            this.hostId = msg.hostId || msg.snapshot?.hostId;
             this.onlineCount = msg.onlineCount || 1;
+            this.maxPlayers = msg.maxPlayers || msg.snapshot?.maxPlayers || 4;
+            if (msg.playerName) this.playerName = msg.playerName;
             this.serverSnapshot = msg.snapshot;
             this.displaySnapshot = structuredClone(msg.snapshot);
+
+            if (Array.isArray(msg.rooms)) {
+              this.roomListCallback?.(msg.rooms);
+            }
+
             this.statusCallback?.({
               isOnline: true,
               roomId: this.roomId,
+              roomName: this.roomName,
+              hostId: this.hostId,
               onlineCount: this.onlineCount,
+              maxPlayers: this.maxPlayers,
               localPlayerId: this.localPlayerId,
+              playerName: this.playerName,
               classId: msg.classId,
               isWelcome: true,
             });
@@ -81,14 +111,32 @@ export class WebSocketTransport {
           } else if (msg.type === 'state') {
             this.isOnline = true;
             this.roomId = msg.roomId || this.roomId;
+            this.roomName = msg.roomName || msg.snapshot?.roomName || this.roomName;
+            this.hostId = msg.hostId || msg.snapshot?.hostId || this.hostId;
             this.onlineCount = msg.onlineCount || 1;
+            this.maxPlayers = msg.maxPlayers || msg.snapshot?.maxPlayers || this.maxPlayers;
             this._applyServerSnapshot(msg.snapshot);
             this.statusCallback?.({
               isOnline: true,
               roomId: this.roomId,
+              roomName: this.roomName,
+              hostId: this.hostId,
               onlineCount: this.onlineCount,
+              maxPlayers: this.maxPlayers,
               localPlayerId: this.localPlayerId,
             });
+          } else if (msg.type === 'room_list' && Array.isArray(msg.rooms)) {
+            this.roomListCallback?.(msg.rooms);
+          } else if (msg.type === 'auth_ok') {
+            this.isOnline = true;
+            if (msg.playerId) this.localPlayerId = msg.playerId;
+            if (msg.nickname) this.playerName = msg.nickname;
+            if (Array.isArray(msg.rooms)) {
+              this.roomListCallback?.(msg.rooms);
+            }
+            this.authCallback?.(msg);
+          } else if (msg.type === 'auth_error') {
+            this.authErrorCallback?.(msg.message || '로그인 실패');
           }
         } catch {}
       });
@@ -98,7 +146,10 @@ export class WebSocketTransport {
         this.statusCallback?.({
           isOnline: false,
           roomId: 'OFFLINE',
+          roomName: '오프라인 연습장',
+          hostId: this.localPlayerId,
           onlineCount: 1,
+          maxPlayers: 4,
           localPlayerId: this.localPlayerId,
         });
       });
@@ -132,10 +183,74 @@ export class WebSocketTransport {
     }
   }
 
+  onAuthSuccess(cb) {
+    this.authCallback = cb;
+  }
+
+  onAuthError(cb) {
+    this.authErrorCallback = cb;
+  }
+
+  authenticate({ mode = 'login', username = '', password = '', nickname = '' } = {}) {
+    const cleanUser = String(username || '').trim().slice(0, 16) || 'hero01';
+    const cleanNick = mode === 'signup' ? String(nickname || '').trim().slice(0, 12) : '';
+    if (cleanNick) this.playerName = cleanNick;
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: mode === 'signup' ? 'auth_signup' : 'auth_login',
+          username: cleanUser,
+          password,
+          nickname: cleanNick,
+        })
+      );
+    } else {
+      this.authCallback?.({
+        username: cleanUser,
+        nickname: cleanNick,
+        rooms: [],
+      });
+    }
+  }
+
+  leaveRoom() {
+    this.roomId = '';
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'leave_room' }));
+    }
+  }
+
+  createRoom({ roomId = '', roomName = '', maxPlayers = 4, botFillMode = 'auto', playerName = '', classId = '' } = {}) {
+    if (playerName) this.playerName = playerName;
+    if (classId !== undefined) this.preferredClass = classId;
+
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'create_room',
+          roomId,
+          roomName,
+          maxPlayers,
+          botFillMode,
+          name: this.playerName,
+          classId: this.preferredClass,
+        })
+      );
+    } else {
+      this.roomId = roomId || 'LOCAL-01';
+      this.roomName = roomName || '로컬 결투장';
+      this.fallbackSim.roomName = this.roomName;
+      this.fallbackSim.maxPlayers = maxPlayers;
+      this.fallbackSim.botFillMode = botFillMode;
+      this.fallbackSim.enterWaitingRoom();
+    }
+  }
+
   joinRoom(roomId, playerName = '', classId = '') {
     this.roomId = roomId || 'ROYALE-01';
     if (playerName) this.playerName = playerName;
-    if (classId) this.preferredClass = classId;
+    if (classId !== undefined && classId !== '') this.preferredClass = classId;
 
     if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
@@ -146,6 +261,81 @@ export class WebSocketTransport {
           classId: this.preferredClass,
         })
       );
+    } else {
+      this.fallbackSim.enterWaitingRoom();
+    }
+  }
+
+  requestRoomList() {
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'list_rooms' }));
+    }
+    // HTTP fallback 병행
+    if (typeof window !== 'undefined' && window.fetch) {
+      fetch('/api/rooms')
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && Array.isArray(data.rooms)) {
+            this.roomListCallback?.(data.rooms);
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  hostStartGame() {
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'host_start_game' }));
+    } else {
+      this.fallbackSim.hostStartGame(this.localPlayerId);
+    }
+  }
+
+  returnToWaiting() {
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'return_to_waiting' }));
+    } else {
+      this.fallbackSim.enterWaitingRoom();
+    }
+  }
+
+  toggleReady() {
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'toggle_ready' }));
+    } else {
+      const p = this.fallbackSim.players.get(this.localPlayerId);
+      if (p) p.ready = !p.ready;
+    }
+  }
+
+  setRoomConfig(config = {}) {
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          type: 'set_room_config',
+          ...config,
+        })
+      );
+    } else {
+      if (config.botFillMode) {
+        this.fallbackSim.botFillMode = config.botFillMode;
+        this.fallbackSim._syncArenaBots();
+      }
+      if (config.maxPlayers) {
+        this.fallbackSim.maxPlayers = config.maxPlayers;
+      }
+    }
+  }
+
+  setPlayerName(newName) {
+    const clean = String(newName || '').trim().slice(0, 14);
+    if (!clean) return;
+    this.playerName = clean;
+    if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'set_name', name: clean }));
+    } else {
+      const p = this.fallbackSim.players.get(this.localPlayerId);
+      if (p) p.name = clean;
     }
   }
 
@@ -192,6 +382,10 @@ export class WebSocketTransport {
 
   onStatusUpdate(callback) {
     this.statusCallback = callback;
+  }
+
+  onRoomListUpdate(callback) {
+    this.roomListCallback = callback;
   }
 
   tick(dt) {

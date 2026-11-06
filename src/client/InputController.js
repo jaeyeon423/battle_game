@@ -55,6 +55,8 @@ export class InputController {
 
   _bindEvents() {
     window.addEventListener('keydown', (e) => {
+      const tag = e.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       this.onInteract?.();
       const code = e.code;
       this.keys.add(code);
@@ -68,12 +70,12 @@ export class InputController {
         this.skill2Queued = true;
       }
       if (code === 'KeyB') this.onSelectClass?.('random');
-      if (code === 'Digit1') this.onSelectClass?.('rifle');
-      if (code === 'Digit2') this.onSelectClass?.('shotgun');
-      if (code === 'Digit3') this.onSelectClass?.('lmg');
-      if (code === 'Digit4') this.onSelectClass?.('sniper');
-      if (code === 'Digit5') this.onSelectClass?.('launcher');
-      if (code === 'Digit6') this.onSelectClass?.('smg');
+      if (code === 'Digit1') this.onSelectClass?.('bow');
+      if (code === 'Digit2') this.onSelectClass?.('sword');
+      if (code === 'Digit3') this.onSelectClass?.('tome');
+      if (code === 'Digit4') this.onSelectClass?.('crossbow');
+      if (code === 'Digit5') this.onSelectClass?.('staff');
+      if (code === 'Digit6') this.onSelectClass?.('daggers');
     });
 
     window.addEventListener('keyup', (e) => {

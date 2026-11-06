@@ -663,3 +663,781 @@ body {
 .bottom-guide b {
   color: var(--gold);
 }
+
+
+/* ============================================================================
+ * [멀티플레이 핵심] 대기실(Waiting Room) & 방 목록/생성(Room Browser) 모달 스타일
+ * 모바일 가로/세로 뷰포트 및 터치 인터페이스 최적화
+ * ============================================================================ */
+
+.hidden {
+  display: none !important;
+}
+
+.winner-overlay:not(.hidden) {
+  pointer-events: auto;
+}
+
+.winner-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.winner-btn {
+  background: rgba(24, 32, 48, 0.95);
+  border: 1px solid var(--cyan);
+  color: var(--text-main);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 6px;
+  min-height: 42px;
+}
+
+.winner-btn.primary {
+  background: linear-gradient(135deg, #ffa502, #ff6348);
+  border-color: var(--gold);
+  color: #0b0e14;
+  box-shadow: 0 0 16px rgba(255, 165, 2, 0.45);
+}
+
+.waiting-room-overlay,
+.room-browser-overlay,
+.create-room-overlay,
+.auth-overlay,
+.nickname-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.68);
+  backdrop-filter: blur(4px);
+  z-index: 30;
+  pointer-events: auto;
+  padding: 10px;
+}
+
+.room-browser-overlay {
+  z-index: 40;
+  background: rgba(4, 6, 12, 0.86);
+}
+
+.create-room-overlay {
+  z-index: 45;
+  background: rgba(4, 6, 12, 0.88);
+}
+
+.nickname-overlay {
+  z-index: 50;
+  background: rgba(4, 6, 12, 0.85);
+}
+
+.auth-overlay {
+  z-index: 60;
+  background: radial-gradient(circle at center, rgba(16, 24, 42, 0.92) 0%, rgba(4, 6, 12, 0.97) 100%);
+}
+
+.auth-modal,
+.create-room-modal {
+  width: min(440px, 94vw);
+  max-height: 94dvh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(18, 25, 38, 0.98) 0%, rgba(9, 13, 21, 0.99) 100%);
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  box-shadow: 0 0 40px rgba(255, 211, 42, 0.3), 0 18px 48px rgba(0, 0, 0, 0.9);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.auth-brand {
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 6px;
+}
+
+.auth-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--cyan);
+  background: rgba(94, 242, 255, 0.14);
+  border: 1px solid rgba(94, 242, 255, 0.45);
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-bottom: 4px;
+}
+
+.auth-brand h1 {
+  margin: 2px 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+
+.auth-brand p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: #0a0e16;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #2b3648;
+}
+
+.auth-tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.auth-tab-btn.active {
+  background: rgba(255, 211, 42, 0.22);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.auth-status-msg {
+  margin: 0;
+  font-size: 11px;
+  color: var(--cyan);
+  text-align: center;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.rb-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.user-profile-pill {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--cyan);
+  background: rgba(94, 242, 255, 0.14);
+  border: 1px solid rgba(94, 242, 255, 0.45);
+  padding: 4px 10px;
+  border-radius: 99px;
+}
+
+.rb-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.create-room-top-btn {
+  background: linear-gradient(135deg, #2ed573 0%, #1eae57 100%);
+  border: 2px solid #7bed9f;
+  color: #06130b;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 900;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 38px;
+  box-shadow: 0 0 14px rgba(46, 213, 115, 0.4);
+}
+
+.create-room-top-btn:active {
+  transform: scale(0.96);
+}
+
+.rb-full-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rb-room-list.full-width {
+  max-height: 250px;
+  min-height: 160px;
+  background: rgba(10, 14, 22, 0.85);
+  border: 1px solid #2b3648;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.nickname-modal {
+  width: min(420px, 92vw);
+  background: linear-gradient(180deg, rgba(18, 24, 36, 0.98) 0%, rgba(10, 14, 22, 0.99) 100%);
+  border: 2px solid var(--cyan);
+  border-radius: 10px;
+  box-shadow: 0 0 32px rgba(94, 242, 255, 0.3), 0 16px 44px rgba(0, 0, 0, 0.85);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nick-modal-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.clickable-name {
+  cursor: pointer;
+  pointer-events: auto;
+  text-decoration: underline dashed rgba(255, 211, 42, 0.55);
+  text-underline-offset: 3px;
+}
+
+.waiting-room-modal,
+.room-browser-modal {
+  width: min(760px, 95vw);
+  max-height: 94dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: linear-gradient(180deg, rgba(18, 24, 36, 0.97) 0%, rgba(10, 14, 22, 0.99) 100%);
+  border: 2px solid var(--gold);
+  border-radius: 10px;
+  box-shadow: 0 0 36px rgba(255, 211, 42, 0.28), 0 16px 44px rgba(0, 0, 0, 0.85);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wait-header,
+.rb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.wait-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.room-code-pill {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 900;
+  color: #090d14;
+  background: var(--cyan);
+  padding: 4px 10px;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.wait-title-group h2,
+.rb-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--gold);
+}
+
+.lobby-nav-btn,
+.rb-close-btn,
+.rb-refresh-btn {
+  background: rgba(94, 242, 255, 0.15);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 38px;
+}
+
+.lobby-nav-btn:active,
+.rb-close-btn:active,
+.rb-refresh-btn:active {
+  transform: scale(0.96);
+}
+
+.wait-body-grid,
+.rb-body-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 8px;
+}
+
+.wait-panel,
+.rb-column {
+  background: rgba(12, 16, 25, 0.9);
+  border: 1px solid #2b3648;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wait-panel-header,
+.rb-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-main);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+  padding-bottom: 6px;
+}
+
+.bot-status-tag {
+  font-size: 10px;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.wait-player-list,
+.rb-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.wait-player-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(22, 29, 44, 0.9);
+  border: 1px solid #34425a;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.wait-player-card.is-me {
+  border-color: var(--cyan);
+  background: rgba(94, 242, 255, 0.12);
+}
+
+.wait-player-card.is-bot {
+  opacity: 0.78;
+  border-style: dashed;
+}
+
+.wp-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.wp-role-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 900;
+}
+
+.wp-role-badge.host {
+  background: rgba(255, 211, 42, 0.22);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+}
+
+.wp-role-badge.ready {
+  background: rgba(46, 213, 115, 0.2);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.wp-role-badge.wait {
+  background: rgba(149, 165, 166, 0.2);
+  color: var(--text-dim);
+}
+
+.wp-class-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--gold);
+}
+
+.nickname-edit-row,
+.rb-direct-join {
+  display: flex;
+  gap: 6px;
+}
+
+.nickname-edit-row input,
+.rb-direct-join input,
+.rb-field input {
+  flex: 1;
+  background: #0b0f17;
+  border: 1px solid #38465e;
+  border-radius: 6px;
+  color: var(--text-main);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 7px 10px;
+  min-height: 36px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.nickname-edit-row button,
+.rb-direct-join button {
+  background: rgba(255, 211, 42, 0.2);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 12px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.wait-class-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.wait-class-btn {
+  background: rgba(22, 29, 44, 0.92);
+  border: 1px solid #38465e;
+  border-radius: 6px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  cursor: pointer;
+  color: var(--text-main);
+  text-align: left;
+  min-height: 44px;
+}
+
+.wait-class-btn .wc-icon {
+  font-size: 14px;
+}
+
+.wait-class-btn b {
+  font-size: 11px;
+  color: var(--text-main);
+}
+
+.wait-class-btn small {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.wait-class-btn.selected {
+  border: 2px solid var(--gold);
+  background: rgba(255, 211, 42, 0.2);
+  box-shadow: 0 0 12px rgba(255, 211, 42, 0.3);
+}
+
+.wait-class-btn.selected b {
+  color: var(--gold);
+}
+
+.wait-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 6px;
+}
+
+.host-action-bar,
+.guest-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.host-config-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.host-crown-badge {
+  background: rgba(255, 211, 42, 0.2);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.config-pill-btn {
+  background: rgba(25, 34, 50, 0.95);
+  border: 1px solid #455672;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.start-game-primary-btn,
+.create-room-submit-btn {
+  background: linear-gradient(135deg, #2ed573 0%, #1eae57 100%);
+  border: 2px solid #7bed9f;
+  color: #06130b;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 900;
+  padding: 10px 22px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(46, 213, 115, 0.45);
+  min-height: 44px;
+}
+
+.start-game-primary-btn:active,
+.create-room-submit-btn:active {
+  transform: scale(0.96);
+}
+
+.ready-toggle-btn {
+  background: linear-gradient(135deg, #1e90ff 0%, #5ef2ff 100%);
+  border: 2px solid #ffffff;
+  color: #06101a;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.guest-wait-hint {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* 방 목록 아이템 카드 */
+.rb-room-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(22, 30, 46, 0.95);
+  border: 1px solid #384761;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.rb-room-item.current {
+  border-color: var(--gold);
+  background: rgba(255, 211, 42, 0.14);
+}
+
+.rb-room-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rb-room-info b {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.rb-room-info small {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.rb-join-btn {
+  background: rgba(94, 242, 255, 0.2);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.rb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.rb-option-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.rb-opt-btn {
+  background: rgba(22, 29, 44, 0.95);
+  border: 1px solid #3b4b66;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 7px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.rb-opt-btn.selected {
+  border-color: var(--gold);
+  background: rgba(255, 211, 42, 0.22);
+  color: var(--gold);
+}
+
+/* ============================================================================
+ * 모바일 가로/세로 뷰포트 반응형 레이아웃 최적화
+ * ============================================================================ */
+
+@media (max-width: 920px), (max-height: 520px) {
+  .bottom-guide {
+    display: none;
+  }
+
+  .hud-top {
+    top: 6px;
+    left: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+
+  .hud-card {
+    padding: 5px 8px;
+  }
+
+  .soldier-status {
+    min-width: 185px;
+    gap: 3px;
+  }
+
+  .status-header {
+    font-size: 11px;
+  }
+
+  .bar-value {
+    font-size: 10px;
+    min-width: 58px;
+  }
+
+  .mission-center {
+    gap: 10px;
+  }
+
+  .metric-val {
+    font-size: 12px;
+  }
+
+  .metric-val.alive-count {
+    font-size: 13px;
+  }
+
+  .tool-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+
+  .stick-zone {
+    bottom: 16px;
+    width: 116px;
+    height: 116px;
+  }
+
+  .left-stick {
+    left: 18px;
+  }
+
+  .right-stick {
+    right: 18px;
+  }
+
+  .action-btn {
+    width: 56px;
+    height: 56px;
+  }
+
+  .reload-btn {
+    right: 152px;
+    bottom: 14px;
+  }
+
+  .skill1-btn {
+    right: 140px;
+    bottom: 80px;
+  }
+
+  .skill2-btn {
+    right: 82px;
+    bottom: 140px;
+  }
+
+  .waiting-room-modal,
+  .room-browser-modal {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .wait-player-list,
+  .rb-room-list {
+    max-height: 130px;
+  }
+}
+
+@media (max-width: 680px) {
+  .wait-body-grid,
+  .rb-body-grid {
+    grid-template-columns: 1fr;
+  }
+}

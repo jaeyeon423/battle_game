@@ -1,6 +1,7 @@
 // ============================================================================
-// [Client] 메인 엔트리 포인트 — 원형 배틀로얄: 랜덤 무기 서바이벌 (CIRCLE ROYALE)
-// 시작 시 랜덤 무기 박스(룰렛) 추첨 연출 + 최후의 1인 서바이벌 + 실시간 멀티플레이 연동
+// [Client] 메인 엔트리 포인트 — 원형 배틀로얄: 모바일 멀티플레이 & 방장 시작 시스템
+// - 방 생성(Create Room) · 실시간 방 목록 · 대기실(Waiting Room) · 방장(Host) 게임 시작
+// - 시작 시 랜덤 무기 박스(룰렛) 추첨 연출 + 최후의 1인 서바이벌
 // ============================================================================
 
 import { WEAPON_KEYS, resolveWeaponSpec, WORLD_CONFIG } from '../shared/constants.js';
@@ -19,15 +20,42 @@ class GameClient {
     this.transport = new WebSocketTransport();
 
     const params = new URLSearchParams(window.location.search);
-    const initRoom = params.get('room') || 'ROYALE-01';
-    const initName = params.get('name') || '';
+    const initRoomParam = params.get('room') || '';
+    const savedName = (() => {
+      try {
+        return localStorage.getItem('cr_player_name') || '';
+      } catch {
+        return '';
+      }
+    })();
+    const savedUser = (() => {
+      try {
+        return localStorage.getItem('cr_auth_user') || '';
+      } catch {
+        return '';
+      }
+    })();
+    const initName = params.get('name') || savedName || '';
     const initClass = params.get('class') || '';
+    this.autoStartParam = params.get('autostart') === '1';
 
-    this.localPlayerId = this.transport.connect(initName, initClass, initRoom);
+    this.authMode = 'login';
+    this.isLoggedIn = false;
+    this.currentUser = savedUser || '';
+    this.inRoom = false;
+
+    this.selectedWaitClass = initClass || 'random';
+    this.createRoomMaxPlayers = 2;
+    this.createRoomBotMode = 'auto';
+    this.roomBrowserOpen = false;
+    this.availableRooms = [];
+
+    // 접속 시에는 방에 바로 들어가지 않고 로그인 -> 방 목록 순서로 진행
+    this.localPlayerId = this.transport.connect(initName, initClass, initRoomParam, false);
     this.latestSnapshot = this.transport.displaySnapshot;
 
-    // 로컬 랜덤박스 모달 표시 타이머 (처음 입장했거나 수동으로 다시 뽑았을 때 연출 보장)
-    this.localBoxModalTimer = 2.6;
+    // 로컬 랜덤박스 모달 표시 타이머 (전투 중 수동 다시 뽑기 시에만 사용)
+    this.localBoxModalTimer = 0;
     this.lastSeenBoxSeq = 0;
     this.rouletteAnimTime = 0;
 
@@ -49,15 +77,60 @@ class GameClient {
       const roomEl = $('roomStatusText');
       const roomBtn = $('roomChangeBtn');
       if (status.isOnline) {
-        roomEl.textContent = `🟢 ${status.roomId} (${status.onlineCount}P)`;
-        if (roomBtn) roomBtn.textContent = `📡 경기장: ${status.roomId} (${status.onlineCount}명)`;
+        if (roomEl) roomEl.textContent = `🟢 ${status.roomId} (${status.onlineCount}P)`;
+        if (roomBtn) roomBtn.textContent = `🏠 방 목록 (${status.roomId} · ${status.onlineCount}명)`;
       } else {
-        roomEl.textContent = `⚪ OFFLINE (LOCAL)`;
+        if (roomEl) roomEl.textContent = `⚪ OFFLINE (LOCAL)`;
       }
+
       if (status.isWelcome) {
-        this.localBoxModalTimer = 2.6;
-        this.rouletteAnimTime = 0;
+        this.inRoom = true;
+        this.closeRoomBrowser();
+        this.closeCreateRoomModal();
+        const nickInput = $('waitNicknameInput');
+        if (nickInput && status.playerName) {
+          nickInput.value = status.playerName;
+        }
+        if (this.autoStartParam && status.hostId === this.localPlayerId) {
+          this.autoStartParam = false;
+          this.transport.hostStartGame();
+        }
       }
+    });
+
+    this.transport.onAuthSuccess((authMsg) => {
+      this.isLoggedIn = true;
+      this.currentUser = authMsg.username || this.currentUser || 'hero01';
+      const finalNick = authMsg.nickname || this._getEnteredNickname() || this.currentUser;
+      try {
+        localStorage.setItem('cr_auth_user', this.currentUser);
+        localStorage.setItem('cr_player_name', finalNick);
+      } catch {}
+
+      const waitInput = $('waitNicknameInput');
+      if (waitInput) waitInput.value = finalNick;
+      this.isAdmin = Boolean(authMsg.isAdmin || this.currentUser.toLowerCase() === 'kim423');
+      const rolePrefix = this.isAdmin ? '👑 운영자 · ' : '👤 ';
+      const profileEl = $('lobbyUserProfileText');
+      if (profileEl) profileEl.textContent = `${rolePrefix}${finalNick} (${this.currentUser})`;
+      const nickBtn = $('nicknameBtn');
+      if (nickBtn) nickBtn.textContent = `✏️ 닉네임: ${finalNick}`;
+
+      $('authOverlay')?.classList.add('hidden');
+      this.openRoomBrowser();
+    });
+
+    this.transport.onAuthError((errMsg) => {
+      const msgEl = $('authStatusMsg');
+      if (msgEl) {
+        msgEl.textContent = `⚠️ ${errMsg}`;
+        msgEl.style.color = '#ff4757';
+      }
+    });
+
+    this.transport.onRoomListUpdate((rooms) => {
+      this.availableRooms = rooms || [];
+      this._renderRoomBrowserList();
     });
 
     this.transport.onStateUpdate((snapshot) => {
@@ -65,7 +138,11 @@ class GameClient {
       if (snapshot.events && snapshot.events.length > 0) {
         this.renderer.processEvents(snapshot.events);
         for (let i = 0; i < snapshot.events.length; i++) {
-          this.audio.playEvent(snapshot.events[i]);
+          const ev = snapshot.events[i];
+          this.audio.playEvent(ev);
+          if (ev.type === 'round_roulette') {
+            this.rouletteAnimTime = 0;
+          }
         }
       }
     });
@@ -80,38 +157,263 @@ class GameClient {
 
   selectClass(classId) {
     this.audio.unlock();
+    this.selectedWaitClass = classId || 'random';
+    this._updateWaitClassButtons();
+
     if (classId === 'random') {
-      this.localBoxModalTimer = 2.2;
-      this.rouletteAnimTime = 0;
+      if (this.latestSnapshot?.roundState === 'combat') {
+        this.localBoxModalTimer = 2.0;
+        this.rouletteAnimTime = 0;
+      }
       this.transport.rollRandomBox();
     } else {
       this.transport.switchClass(classId);
     }
   }
 
+  _updateWaitClassButtons() {
+    document.querySelectorAll('.wait-class-btn').forEach((btn) => {
+      btn.classList.toggle('selected', btn.dataset.class === this.selectedWaitClass);
+    });
+  }
+
+  setAuthTab(mode) {
+    this.authMode = mode === 'signup' ? 'signup' : 'login';
+    $('tabLoginBtn')?.classList.toggle('active', this.authMode === 'login');
+    $('tabSignupBtn')?.classList.toggle('active', this.authMode === 'signup');
+    $('authNicknameField')?.classList.toggle('hidden', this.authMode !== 'signup');
+    const submitBtn = $('authSubmitBtn');
+    if (submitBtn) {
+      submitBtn.textContent =
+        this.authMode === 'signup'
+          ? '📝 회원가입 완료 및 방 목록 입장'
+          : '🚀 로그인하고 방 목록 입장';
+    }
+  }
+
+  submitAuth() {
+    this.audio.unlock();
+    const rawUser = $('authUsernameInput')?.value.trim() || 'hero01';
+    const rawPass = $('authPasswordInput')?.value || '1234';
+    const rawNick =
+      this.authMode === 'signup'
+        ? $('authNicknameInput')?.value.trim() || rawUser.slice(0, 12)
+        : '';
+
+    this.transport.authenticate({
+      mode: this.authMode,
+      username: rawUser,
+      password: rawPass,
+      nickname: rawNick,
+    });
+  }
+
+  logout() {
+    this.audio.unlock();
+    this.isLoggedIn = false;
+    this.inRoom = false;
+    this.transport.leaveRoom();
+    this.closeRoomBrowser();
+    this.closeCreateRoomModal();
+    $('waitingRoomOverlay')?.classList.add('hidden');
+    $('authOverlay')?.classList.remove('hidden');
+  }
+
+  openRoomBrowser() {
+    this.audio.unlock();
+    this.roomBrowserOpen = true;
+    $('roomBrowserOverlay')?.classList.remove('hidden');
+    // 이미 방에 들어가 있는 상태에서 열었을 때만 [✖ 닫기] 버튼 표시
+    $('closeRoomBrowserBtn')?.classList.toggle('hidden', !this.inRoom);
+    this.transport.requestRoomList();
+  }
+
+  closeRoomBrowser() {
+    this.roomBrowserOpen = false;
+    $('roomBrowserOverlay')?.classList.add('hidden');
+  }
+
+  openCreateRoomModal() {
+    this.audio.unlock();
+    $('createRoomOverlay')?.classList.remove('hidden');
+    const nameInput = $('createRoomNameInput');
+    if (nameInput && !nameInput.value) {
+      const myNick = this._getEnteredNickname() || this.currentUser || '영웅';
+      nameInput.value = `${myNick}의 결투장`.slice(0, 20);
+    }
+    setTimeout(() => nameInput?.focus(), 40);
+  }
+
+  closeCreateRoomModal() {
+    $('createRoomOverlay')?.classList.add('hidden');
+  }
+
+  _renderRoomBrowserList() {
+    const listEl = $('activeRoomList');
+    if (!listEl) return;
+
+    if (!this.availableRooms || this.availableRooms.length === 0) {
+      listEl.innerHTML = `<div class="rb-room-item"><div class="rb-room-info"><b>열려있는 방이 없습니다</b><small>우측에서 새 방을 만들어 방장이 되어보세요!</small></div></div>`;
+      return;
+    }
+
+    listEl.innerHTML = this.availableRooms
+      .map((r) => {
+        const isCurrent = this.inRoom && r.roomId === this.transport.roomId;
+        const stateLabel =
+          r.roundState === 'waiting'
+            ? '🟢 대기실 (입장 가능)'
+            : r.roundState === 'roulette'
+              ? '🎲 무기 추첨중'
+              : '⚔️ 전투 진행중';
+        return `<div class="rb-room-item ${isCurrent ? 'current' : ''}">
+          <div class="rb-room-info">
+            <b>${r.roomName || r.roomId} <span style="color:#5ef2ff">[${r.roomId}]</span></b>
+            <small>👑 방장: ${r.hostName || '대기중'} · 👥 ${r.onlineCount}/${r.maxPlayers || 4}명 · ${stateLabel}</small>
+          </div>
+          <button type="button" class="rb-join-btn" data-join-room="${r.roomId}">
+            ${isCurrent ? '현재 방' : '입장하기'}
+          </button>
+        </div>`;
+      })
+      .join('');
+
+    listEl.querySelectorAll('[data-join-room]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const targetRoomId = btn.getAttribute('data-join-room');
+        if (targetRoomId) {
+          this.transport.joinRoom(targetRoomId, this._getEnteredNickname(), this.selectedWaitClass === 'random' ? '' : this.selectedWaitClass);
+          this.closeRoomBrowser();
+        }
+      });
+    });
+  }
+
+  generateRandomNickname() {
+    const prefixes = ['성검', '신궁', '대마법사', '불꽃', '서리', '폭풍', '어둠', '황금', '푸른달', '홍련'];
+    const suffixes = ['아서스', '레골라스', '멀린', '발키리', '랜슬롯', '아르웬', '가웨인', '제이나', '드래곤', '나이트'];
+    const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const s = suffixes[Math.floor(Math.random() * suffixes.length)];
+    const num = Math.floor(10 + Math.random() * 89);
+    return `${p}${s}${num}`.slice(0, 12);
+  }
+
+  applyNickname(rawName) {
+    const clean = String(rawName || '').trim().slice(0, 12);
+    if (!clean) return;
+    try {
+      localStorage.setItem('cr_player_name', clean);
+    } catch {}
+    const waitInput = $('waitNicknameInput');
+    if (waitInput) waitInput.value = clean;
+    const modalInput = $('modalNicknameInput');
+    if (modalInput) modalInput.value = clean;
+    const nickBtn = $('nicknameBtn');
+    if (nickBtn) nickBtn.textContent = `✏️ 닉네임: ${clean}`;
+    const profileEl = $('lobbyUserProfileText');
+    if (profileEl) profileEl.textContent = `👤 ${clean} (${this.currentUser || '게스트'})`;
+    this.transport.setPlayerName(clean);
+  }
+
+  openNicknameModal() {
+    this.audio.unlock();
+    const overlay = $('nicknameOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('hidden');
+    const modalInput = $('modalNicknameInput');
+    const curName =
+      this.latestSnapshot?.players.find((p) => p.id === this.localPlayerId)?.name ||
+      this._getEnteredNickname() ||
+      '';
+    if (modalInput) {
+      modalInput.value = curName;
+      setTimeout(() => modalInput.focus(), 40);
+    }
+  }
+
+  closeNicknameModal() {
+    $('nicknameOverlay')?.classList.add('hidden');
+  }
+
+  _getEnteredNickname() {
+    const nickInput = $('waitNicknameInput');
+    const val = nickInput ? nickInput.value.trim().slice(0, 12) : '';
+    if (val) {
+      try {
+        localStorage.setItem('cr_player_name', val);
+      } catch {}
+    }
+    return val;
+  }
+
   _bindUI() {
-    const rerollBtn = $('rerollBoxBtn');
-    rerollBtn?.addEventListener('click', () => {
+    // 0. 로그인 / 회원가입 모달 이벤트
+    if (this.currentUser && $('authUsernameInput')) {
+      $('authUsernameInput').value = this.currentUser;
+    }
+
+    $('tabLoginBtn')?.addEventListener('click', () => this.setAuthTab('login'));
+    $('tabSignupBtn')?.addEventListener('click', () => this.setAuthTab('signup'));
+
+    $('authRandomNickBtn')?.addEventListener('click', () => {
+      const rand = this.generateRandomNickname();
+      if ($('authNicknameInput')) $('authNicknameInput').value = rand;
+    });
+
+    $('authSubmitBtn')?.addEventListener('click', () => {
+      this.submitAuth();
+    });
+
+    ['authUsernameInput', 'authPasswordInput', 'authNicknameInput'].forEach((id) => {
+      $(id)?.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') this.submitAuth();
+      });
+    });
+
+    $('logoutBtn')?.addEventListener('click', () => {
+      this.logout();
+    });
+
+    // 방 목록 우측 상단 [➕ 방 만들기] 버튼 -> 방 생성 전용 모달 오픈
+    $('openCreateRoomModalBtn')?.addEventListener('click', () => {
+      this.openCreateRoomModal();
+    });
+
+    $('closeCreateRoomModalBtn')?.addEventListener('click', () => {
+      this.closeCreateRoomModal();
+    });
+
+    // 1. 상단 HUD 버튼들
+    $('roomChangeBtn')?.addEventListener('click', () => {
+      this.openRoomBrowser();
+    });
+
+    $('openRoomBrowserBtn')?.addEventListener('click', () => {
+      this.inRoom = false;
+      this.transport.leaveRoom();
+      $('waitingRoomOverlay')?.classList.add('hidden');
+      this.openRoomBrowser();
+    });
+
+    $('closeRoomBrowserBtn')?.addEventListener('click', () => {
+      if (this.inRoom) this.closeRoomBrowser();
+    });
+
+    $('refreshRoomsBtn')?.addEventListener('click', () => {
+      this.transport.requestRoomList();
+    });
+
+    $('rerollBoxBtn')?.addEventListener('click', () => {
       this.selectClass('random');
     });
 
-    const newRoundBtn = $('newRoundBtn');
-    newRoundBtn?.addEventListener('click', () => {
+    $('newRoundBtn')?.addEventListener('click', () => {
       this.audio.unlock();
-      this.localBoxModalTimer = 2.8;
-      this.rouletteAnimTime = 0;
-      this.transport.startNewRound();
-    });
-
-    const roomBtn = $('roomChangeBtn');
-    roomBtn?.addEventListener('click', () => {
-      this.audio.unlock();
-      const nextRoom = window.prompt(
-        '입장할 원형 배틀로얄 경기장 코드를 입력하세요 (예: ROYALE-01, ROYALE-02):',
-        this.transport.roomId
-      );
-      if (nextRoom && nextRoom.trim()) {
-        this.transport.joinRoom(nextRoom.trim().toUpperCase());
+      if (this.latestSnapshot?.roundState === 'waiting') {
+        this.transport.hostStartGame();
+      } else {
+        this.transport.returnToWaiting();
       }
     });
 
@@ -120,6 +422,153 @@ class GameClient {
       const on = this.audio.toggleMute();
       soundBtn.textContent = on ? '🔊 사운드 ON' : '🔇 사운드 OFF';
       soundBtn.classList.toggle('muted', !on);
+    });
+
+    // 1-2. 상단 HUD 및 캐릭터 타이틀 닉네임 변경 모달 연결
+    $('nicknameBtn')?.addEventListener('click', () => {
+      this.openNicknameModal();
+    });
+
+    $('heroTitleText')?.addEventListener('click', () => {
+      this.openNicknameModal();
+    });
+
+    $('closeNicknameModalBtn')?.addEventListener('click', () => {
+      this.closeNicknameModal();
+    });
+
+    $('modalRandomNickBtn')?.addEventListener('click', () => {
+      const rand = this.generateRandomNickname();
+      const modalInput = $('modalNicknameInput');
+      if (modalInput) modalInput.value = rand;
+    });
+
+    $('confirmNicknameModalBtn')?.addEventListener('click', () => {
+      const val = $('modalNicknameInput')?.value.trim();
+      if (val) this.applyNickname(val);
+      this.closeNicknameModal();
+    });
+
+    $('modalNicknameInput')?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const val = $('modalNicknameInput')?.value.trim();
+        if (val) this.applyNickname(val);
+        this.closeNicknameModal();
+      }
+    });
+
+    // 2. 대기실(Waiting Room) 내부 인터랙션
+    $('saveNicknameBtn')?.addEventListener('click', () => {
+      const name = this._getEnteredNickname();
+      if (name) {
+        this.applyNickname(name);
+      }
+    });
+
+    $('randomNicknameBtn')?.addEventListener('click', () => {
+      const rand = this.generateRandomNickname();
+      this.applyNickname(rand);
+    });
+
+    $('waitNicknameInput')?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const name = this._getEnteredNickname();
+        if (name) this.applyNickname(name);
+      }
+    });
+
+    document.querySelectorAll('.wait-class-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const cls = btn.dataset.class || 'random';
+        this.selectClass(cls);
+      });
+    });
+
+    // 방장 전용: AI 봇 설정 토글
+    $('botModeToggleBtn')?.addEventListener('click', () => {
+      const cur = this.latestSnapshot?.botFillMode || 'auto';
+      const next = cur === 'auto' ? 'off' : cur === 'off' ? 'on' : 'auto';
+      this.transport.setRoomConfig({ botFillMode: next });
+    });
+
+    // 방장 전용: 최대 인원 토글
+    $('maxPlayersToggleBtn')?.addEventListener('click', () => {
+      const cur = this.latestSnapshot?.maxPlayers || 4;
+      const next = cur === 2 ? 4 : cur === 4 ? 8 : 2;
+      this.transport.setRoomConfig({ maxPlayers: next });
+    });
+
+    // 방장 전용: 🚀 게임 시작하기 버튼
+    $('hostStartBtn')?.addEventListener('click', () => {
+      this.audio.unlock();
+      const name = this._getEnteredNickname();
+      if (name) this.transport.setPlayerName(name);
+      this.rouletteAnimTime = 0;
+      this.transport.hostStartGame();
+    });
+
+    // 참가자(Guest) 전용: 준비 완료 토글 버튼
+    $('guestReadyBtn')?.addEventListener('click', () => {
+      this.audio.unlock();
+      const name = this._getEnteredNickname();
+      if (name) this.transport.setPlayerName(name);
+      this.transport.toggleReady();
+    });
+
+    // 3. 방 목록 / 새 방 만들기 모달 인터랙션
+    $('joinByCodeBtn')?.addEventListener('click', () => {
+      const code = $('joinCodeInput')?.value.trim().toUpperCase();
+      if (code) {
+        this.transport.joinRoom(code, this._getEnteredNickname(), this.selectedWaitClass === 'random' ? '' : this.selectedWaitClass);
+        this.closeRoomBrowser();
+      }
+    });
+
+    document.querySelectorAll('#createMaxPlayersRow .rb-opt-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.createRoomMaxPlayers = Number(btn.dataset.max) || 2;
+        document.querySelectorAll('#createMaxPlayersRow .rb-opt-btn').forEach((b) => {
+          b.classList.toggle('selected', b === btn);
+        });
+      });
+    });
+
+    document.querySelectorAll('#createBotModeRow .rb-opt-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.createRoomBotMode = btn.dataset.bot || 'auto';
+        document.querySelectorAll('#createBotModeRow .rb-opt-btn').forEach((b) => {
+          b.classList.toggle('selected', b === btn);
+        });
+      });
+    });
+
+    $('createRoomConfirmBtn')?.addEventListener('click', () => {
+      this.audio.unlock();
+      const roomName = $('createRoomNameInput')?.value.trim() || '';
+      const playerName = this._getEnteredNickname();
+      this.transport.createRoom({
+        roomName,
+        maxPlayers: this.createRoomMaxPlayers,
+        botFillMode: this.createRoomBotMode,
+        playerName,
+        classId: this.selectedWaitClass === 'random' ? '' : this.selectedWaitClass,
+      });
+      this.closeCreateRoomModal();
+      this.closeRoomBrowser();
+    });
+
+    // 4. 우승자 화면 버튼
+    $('winnerRestartBtn')?.addEventListener('click', () => {
+      this.audio.unlock();
+      this.rouletteAnimTime = 0;
+      this.transport.hostStartGame();
+    });
+
+    $('winnerToLobbyBtn')?.addEventListener('click', () => {
+      this.audio.unlock();
+      this.transport.returnToWaiting();
     });
   }
 
@@ -157,18 +606,128 @@ class GameClient {
     requestAnimationFrame((t) => this._loop(t));
   }
 
+  _updateWaitingRoomUI(p, snapshot) {
+    const waitOverlay = $('waitingRoomOverlay');
+    if (!waitOverlay) return;
+
+    const isWaiting = this.isLoggedIn && this.inRoom && !this.roomBrowserOpen && snapshot.roundState === 'waiting';
+    waitOverlay.classList.toggle('hidden', !isWaiting);
+    if (!isWaiting) return;
+
+    const roomId = this.transport.roomId || 'ROYALE-01';
+    const roomName = snapshot.roomName || this.transport.roomName || `${roomId} 결투장`;
+    const maxPlayers = snapshot.maxPlayers || this.transport.maxPlayers || 4;
+    const isMeHost = snapshot.hostId === this.localPlayerId || (!snapshot.hostId && p?.isHost);
+
+    $('waitRoomCodeBadge').textContent = `방 코드: ${roomId}`;
+    $('waitRoomTitleText').textContent = roomName;
+
+    const humans = snapshot.players.filter((m) => !m.isBot);
+    const bots = snapshot.players.filter((m) => m.isBot);
+    $('waitPlayerCountText').textContent = `${humans.length} / ${maxPlayers}명`;
+
+    const botMode = snapshot.botFillMode || 'auto';
+    const botTag = $('waitBotStatusTag');
+    if (botTag) {
+      if (botMode === 'off') {
+        botTag.textContent = '🚫 AI 봇 없음 (실제 유저 전용)';
+      } else if (botMode === 'on') {
+        botTag.textContent = `🤖 빈자리 AI 봇 자동 참가 (${bots.length}기)`;
+      } else {
+        botTag.textContent =
+          humans.length === 1
+            ? '🤖 1인 시작 시 AI 상대 1명 자동 대결'
+            : '⚔️ 유저 2명 이상: 유저끼리 진검승부!';
+      }
+    }
+
+    // 참가자 카드 목록 렌더링
+    const playerListEl = $('waitingPlayerList');
+    if (playerListEl) {
+      playerListEl.innerHTML = snapshot.players
+        .map((member) => {
+          const mSpec = resolveWeaponSpec(member.classId);
+          const isMe = member.id === this.localPlayerId;
+          const isHost = member.id === snapshot.hostId || member.isHost;
+
+          let roleBadge = '';
+          if (member.isBot) {
+            roleBadge = `<span class="wp-role-badge wait">🤖 AI 상대</span>`;
+          } else if (isHost) {
+            roleBadge = `<span class="wp-role-badge host">👑 방장</span>`;
+          } else if (member.ready) {
+            roleBadge = `<span class="wp-role-badge ready">✅ 준비완료</span>`;
+          } else {
+            roleBadge = `<span class="wp-role-badge wait">⏳ 대기중</span>`;
+          }
+
+          const classLabel =
+            !member.isBot && !member.preferredClass
+              ? `🎲 랜덤 (${mSpec.icon} ${mSpec.name})`
+              : `${mSpec.icon} ${mSpec.name}`;
+
+          return `<div class="wait-player-card ${isMe ? 'is-me' : ''} ${member.isBot ? 'is-bot' : ''}">
+            <div class="wp-left">
+              ${roleBadge}
+              <span>${member.name}${isMe ? ' (나)' : ''}</span>
+            </div>
+            <span class="wp-class-tag">${classLabel}</span>
+          </div>`;
+        })
+        .join('');
+    }
+
+    // 하단 방장 vs 게스트 컨트롤 토글
+    $('hostActionBar')?.classList.toggle('hidden', !isMeHost);
+    $('guestActionBar')?.classList.toggle('hidden', isMeHost);
+
+    if (isMeHost) {
+      const botBtn = $('botModeToggleBtn');
+      if (botBtn) {
+        const modeText =
+          botMode === 'auto'
+            ? '🤖 AI 봇: 자동(1인용)'
+            : botMode === 'on'
+              ? '🤖 AI 봇: 항상 켜짐'
+              : '🚫 AI 봇: 끄기(유저만)';
+        botBtn.textContent = modeText;
+      }
+      const maxBtn = $('maxPlayersToggleBtn');
+      if (maxBtn) {
+        maxBtn.textContent = `👥 최대 정원: ${maxPlayers}명`;
+      }
+    } else {
+      const hostPlayer = snapshot.players.find((m) => m.id === snapshot.hostId);
+      const hostName = hostPlayer ? hostPlayer.name : '방장';
+      const hintEl = $('guestWaitHint');
+      if (hintEl) {
+        hintEl.textContent = `⏳ 방장(👑 ${hostName})이 게임을 시작하기를 기다리는 중...`;
+      }
+      const readyBtn = $('guestReadyBtn');
+      if (readyBtn && p) {
+        readyBtn.textContent = p.ready ? '✅ 준비 완료됨 (터치하여 해제)' : '🙋 준비 완료하기 (READY)';
+      }
+    }
+  }
+
   _updateHUD(p, snapshot) {
     if (!p) return;
 
-    // 서버에서 새 라운드 랜덤박스 추첨(boxRollSeq 증가)이 일어났으면 룰렛 모달 활성화!
+    // 0. 대기실(Waiting Room) 오버레이 업데이트
+    this._updateWaitingRoomUI(p, snapshot);
+
     if (p.boxRollSeq && p.boxRollSeq !== this.lastSeenBoxSeq) {
       this.lastSeenBoxSeq = p.boxRollSeq;
-      this.localBoxModalTimer = Math.max(this.localBoxModalTimer, 2.4);
       this.rouletteAnimTime = 0;
     }
 
     const spec = resolveWeaponSpec(p.classId);
-    $('heroTitleText').textContent = `${spec.icon} ${p.name} · ${spec.name}`;
+    const isMeHost = snapshot.hostId === this.localPlayerId || p.isHost;
+    $('heroTitleText').textContent = `${ isMeHost ? '👑 ' : '' }${spec.icon} ${p.name} · ${spec.name}`;
+    const nickBtn = $('nicknameBtn');
+    if (nickBtn) {
+      nickBtn.textContent = `✏️ 닉네임: ${p.name}`;
+    }
     const tierBadge = $('tierBadgeText');
     if (tierBadge) {
       tierBadge.textContent = spec.tier || 'RARE';
@@ -176,40 +735,62 @@ class GameClient {
       tierBadge.style.borderColor = spec.tierColor || '#ffd32a';
     }
 
-    // 1. 자기장 반경(RING) 및 내 체력(HP) · 탄약(AMMO) 표시
+    // 1. 자기장 반경(RING) 및 내 체력(HP) · 탄약(화살/마나/기력) 표시
     const safeR = snapshot.safeRadius ?? WORLD_CONFIG.ARENA_RADIUS;
     const maxR = snapshot.arenaRadius || WORLD_CONFIG.ARENA_RADIUS;
     const ringPct = Math.max(0, Math.min(100, (safeR / maxR) * 100));
     $('baseFill').style.width = `${ringPct}%`;
-    $('baseText').textContent = `${Math.round(safeR)}m`;
+    if (snapshot.safeDelayLeft && snapshot.safeDelayLeft > 0) {
+      $('baseText').textContent = `${Math.round(safeR)}m (대기 ${snapshot.safeDelayLeft}s)`;
+    } else {
+      $('baseText').textContent = `${Math.round(safeR)}m`;
+    }
 
     const hpPct = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
     $('hpFill').style.width = `${hpPct}%`;
     $('hpText').textContent = p.alive ? `${Math.ceil(p.hp)} / ${p.maxHp}` : '💀 ELIMINATED';
 
-    $('ammoLabel').textContent = (p.ammoLabel || 'AMMO').slice(0, 4);
-    $('reloadBtnName').textContent = p.reloadLabel || '탄창교체';
-
     const ammoText = $('ammoText');
     const ammoFill = $('ammoFill');
     const reloadBtn = $('reloadBtn');
 
-    if (p.isReloading) {
-      const reloadPct = Math.min(100, (p.reloadTimer / p.reloadDuration) * 100);
-      ammoText.textContent = `${p.reloadLabel} ${Math.floor(reloadPct)}%`;
-      ammoText.classList.add('reloading');
-      ammoFill.style.width = `${reloadPct}%`;
-      ammoFill.classList.add('reloading');
-      reloadBtn.classList.add('reloading');
-    } else {
-      ammoText.textContent = `${String(p.ammo).padStart(2, '0')} / ${p.maxAmmo}`;
-      ammoText.classList.remove('reloading');
-      ammoFill.style.width = `${(p.ammo / p.maxAmmo) * 100}%`;
-      ammoFill.classList.remove('reloading');
-      reloadBtn.classList.remove('reloading');
+    $('ammoLabel').textContent = (p.ammoLabel || 'AMMO').slice(0, 4);
+    $('reloadBtnName').textContent = p.reloadLabel || '재장전';
+    if (reloadBtn) {
+      reloadBtn.style.opacity = '1.0';
+      reloadBtn.style.pointerEvents = 'auto';
     }
 
-    // 2. 총기 전용 전술 스킬 1·2 버튼 표시
+    if (p.isReloading) {
+      const reloadPct = Math.min(100, (p.reloadTimer / (p.reloadDuration || 1.5)) * 100);
+      ammoText.textContent = `${p.reloadLabel} 중... ${Math.floor(reloadPct)}%`;
+      ammoText.classList.add('reloading');
+      ammoFill.style.width = `${reloadPct}%`;
+      ammoFill.style.background = '#ffa502';
+      ammoFill.classList.add('reloading');
+      reloadBtn?.classList.add('reloading');
+    } else {
+      const curAmmo = Math.floor(p.ammo);
+      ammoText.classList.remove('reloading');
+      ammoFill.classList.remove('reloading');
+      reloadBtn?.classList.remove('reloading');
+
+      if (p.classId === 'archer' || p.classId === 'bow' || p.classId === 'crossbow') {
+        ammoText.textContent = curAmmo > 0 ? '🏹 화살: 1 / 1 (장전 완료)' : '🏹 화살: 장전 필요 (1.5s)';
+        ammoFill.style.width = curAmmo > 0 ? '100%' : '0%';
+        ammoFill.style.background = '#7bed9f';
+      } else if (p.classId === 'warrior' || p.classId === 'sword' || spec.isMelee) {
+        ammoText.textContent = `⚔️ STAM: ${curAmmo} / ${p.maxAmmo} (근접 참격)`;
+        ammoFill.style.width = `${Math.min(100, (p.ammo / p.maxAmmo) * 100)}%`;
+        ammoFill.style.background = '#ffa502';
+      } else {
+        ammoText.textContent = `🔮 MANA: ${curAmmo} / ${p.maxAmmo} (둔화 40% + 화상)`;
+        ammoFill.style.width = `${Math.min(100, (p.ammo / p.maxAmmo) * 100)}%`;
+        ammoFill.style.background = '#e056fd';
+      }
+    }
+
+    // 2. 무기 전용 스킬 1·2 버튼 표시
     const skill1Btn = $('skill1Btn');
     $('skill1Name').textContent = p.skill1Name || '스킬 1';
     if (p.skill1Cooldown > 0) {
@@ -234,23 +815,27 @@ class GameClient {
     const roundNum = snapshot.round || 1;
     const aliveCount = snapshot.aliveCount ?? snapshot.players.length;
     const totalCount = snapshot.totalCount ?? snapshot.players.length;
-    $('waveText').textContent = `ROUND ${String(roundNum).padStart(2, '0')}`;
+    $('waveText').textContent =
+      snapshot.roundState === 'waiting'
+        ? '대기실'
+        : `ROUND ${String(roundNum).padStart(2, '0')}`;
     $('aliveText').textContent = `${aliveCount} / ${totalCount}`;
     $('killText').textContent = `${p.kills || 0}K · ${p.wins || 0}W`;
 
-    // 4. 생존자 로스터 (누가 어떤 랜덤 무기를 들고 살아남았는지 실시간 표시)
+    // 4. 생존자 로스터 (방장 왕관 및 생존 여부 실시간 표시)
     const rosterEl = $('squadRoster');
     if (rosterEl && snapshot.players) {
       rosterEl.innerHTML = snapshot.players
         .map((member) => {
           const mSpec = resolveWeaponSpec(member.classId);
           const isMe = member.id === this.localPlayerId;
+          const isHost = member.id === snapshot.hostId || member.isHost;
           const deadClass = member.alive ? '' : 'dead';
           const statusStr = member.alive
             ? `HP ${Math.ceil(member.hp)}`
             : '💀 탈락';
           return `<div class="squad-member ${isMe ? 'me' : ''} ${deadClass}">
-            <span>${mSpec.icon} ${member.name}${isMe ? ' (나)' : ''}</span>
+            <span>${isHost ? '👑 ' : ''}${mSpec.icon} ${member.name}${isMe ? ' (나)' : ''}</span>
             <span>${statusStr}</span>
           </div>`;
         })
@@ -271,14 +856,17 @@ class GameClient {
     // ========================================================================
     const boxOverlay = $('randomBoxOverlay');
     const isRoulettePhase =
-      snapshot.roundState === 'roulette' || this.localBoxModalTimer > 0;
+      snapshot.roundState === 'roulette' ||
+      (snapshot.roundState === 'combat' && this.localBoxModalTimer > 0);
 
     if (boxOverlay) {
       boxOverlay.classList.toggle('hidden', !isRoulettePhase);
       if (isRoulettePhase) {
-        $('boxRoundBadge').textContent = `ROUND ${String(roundNum).padStart(2, '0')} · ${totalCount}인 원형 서바이벌`;
+        $('boxRoundBadge').textContent =
+          totalCount === 2
+            ? `ROUND ${String(roundNum).padStart(2, '0')} · 1 vs 1 판타지 결투`
+            : `ROUND ${String(roundNum).padStart(2, '0')} · ${totalCount}인 결투`;
 
-        // 초반 1.1초 동안은 6개 무기 슬롯이 빠르게 회전하고, 이후 당첨된 무기에 고정!
         const isSpinning = this.rouletteAnimTime < 1.1;
         const spinWeaponKey =
           WEAPON_KEYS[Math.floor(this.rouletteAnimTime * 16) % WEAPON_KEYS.length];
@@ -290,16 +878,21 @@ class GameClient {
             el.classList.remove('selected');
           } else {
             el.classList.remove('spinning');
-            el.classList.toggle('selected', wKey === spec.id);
+            const isMatch =
+              wKey === spec.id ||
+              (wKey === 'warrior' && (spec.id === 'sword' || spec.id === 'daggers' || spec.isMelee)) ||
+              (wKey === 'archer' && (spec.id === 'bow' || spec.id === 'crossbow')) ||
+              (wKey === 'mage' && (spec.id === 'staff' || spec.id === 'tome'));
+            el.classList.toggle('selected', isMatch);
           }
         });
 
         if (isSpinning) {
           const tempSpec = resolveWeaponSpec(spinWeaponKey);
-          $('drawnWeaponTitle').textContent = `🎲 랜덤박스 추첨 중... [${tempSpec.icon} ${tempSpec.name}]`;
+          $('drawnWeaponTitle').textContent = `🎲 직업 추첨 중... [${tempSpec.icon} ${tempSpec.name}]`;
           $('drawnWeaponDesc').textContent = `${tempSpec.role} · ${tempSpec.weaponName}`;
         } else {
-          $('drawnWeaponTitle').textContent = `✨ 당첨 무기: ${spec.icon} ${spec.name} [${spec.tier}]`;
+          $('drawnWeaponTitle').textContent = `✨ 출전 직업: ${spec.icon} ${spec.name} [${spec.tier}]`;
           $('drawnWeaponDesc').textContent = `[Shift] ${spec.skill1.name}  |  [E] ${spec.skill2.name}`;
         }
 
@@ -310,7 +903,7 @@ class GameClient {
         $('drawnTimerText').textContent =
           snapshot.roundState === 'roulette'
             ? `원형 경기장 전투 개시까지 ${remainSec.toFixed(1)}초`
-            : `랜덤 무기 지급 완료! (${remainSec.toFixed(1)}s)`;
+            : `직업 변경 완료! (${remainSec.toFixed(1)}s)`;
       }
     }
 
@@ -324,13 +917,17 @@ class GameClient {
       if (isRoundOver && snapshot.winner) {
         const w = snapshot.winner;
         $('winnerNameText').textContent = `${w.icon || '🏆'} ${w.name} 승리!`;
-        $('winnerWeaponText').textContent = `당첨 랜덤 무기: ${w.className} · 이번 라운드 ${w.kills}킬 (누적 ${w.wins}승)`;
-        $('winnerNextText').textContent = `${Math.max(0, snapshot.stateTimer || 0).toFixed(1)}초 후 다음 라운드 랜덤박스가 시작됩니다...`;
+        $('winnerWeaponText').textContent = `출전 직업: ${w.className} · 이번 라운드 ${w.kills}킬 (누적 ${w.wins}승)`;
+        $('winnerNextText').textContent = `${Math.max(0, snapshot.stateTimer || 0).toFixed(1)}초 후 대기실로 복귀합니다...`;
+        const restartBtn = $('winnerRestartBtn');
+        if (restartBtn) {
+          restartBtn.classList.toggle('hidden', !isMeHost);
+        }
       }
     }
   }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  new GameClient();
+  window.app = new GameClient();
 });

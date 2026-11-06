@@ -1,6 +1,6 @@
 // ============================================================================
-// [Client] Web Audio API 기반 총기별 격발음 & 폭발 효과음 합성기
-// 5대 총기(돌격소총·산탄총·중기관총·대물저격총·유탄발사기) 사운드 차별화
+// [Client] Web Audio API 기반 판타지 무기별 공격음 & 폭발 효과음 합성기
+// 6대 판타지 무기(장궁·대검·마도서·중석궁·화염 지팡이·쌍단검) 사운드 차별화
 // ============================================================================
 
 export class SynthAudio {
@@ -73,28 +73,44 @@ export class SynthAudio {
     const now = performance.now();
 
     switch (ev.type) {
+      case 'melee_slash':
+        if (now - this.lastShootTime < 40) return;
+        this.lastShootTime = now;
+        // 전사 근접 대검 강타 사운드
+        this._tone(220, 70, 0.18, 'sawtooth', 0.22);
+        this._tone(750, 220, 0.1, 'triangle', 0.16, 0.02);
+        break;
+
       case 'shoot':
         if (now - this.lastShootTime < 40) return;
         this.lastShootTime = now;
-        if (ev.classId === 'shotgun') {
-          // 묵직한 12게이지 산탄총 파열음
-          this._tone(180, 48, 0.13, 'sawtooth', 0.22);
-          this._tone(320, 85, 0.09, 'square', 0.14);
-        } else if (ev.classId === 'sniper') {
-          // 날카롭고 묵직한 .50구경 대물 저격총 격발음
-          this._tone(780, 90, 0.16, 'sawtooth', 0.24);
-          this._tone(220, 45, 0.18, 'triangle', 0.18);
-        } else if (ev.classId === 'lmg') {
-          // 중기관총 연사 타격음
-          this._tone(360, 110, 0.055, 'sawtooth', 0.15);
-        } else if (ev.classId === 'launcher') {
-          // 40mm 유탄발사기 텅- 하는 발사음
-          this._tone(210, 75, 0.14, 'triangle', 0.2);
-          this._tone(140, 55, 0.12, 'sine', 0.18);
+        if (ev.classId === 'warrior' || ev.classId === 'sword') {
+          this._tone(260, 90, 0.16, 'sawtooth', 0.14);
+          this._tone(900, 300, 0.1, 'triangle', 0.1, 0.02);
+        } else if (ev.classId === 'mage' || ev.classId === 'staff' || ev.classId === 'tome') {
+          this._tone(460, 920, 0.1, 'sine', 0.15);
+          this._tone(240, 90, 0.16, 'sawtooth', 0.14, 0.02);
         } else {
-          // AR-15 돌격소총 경쾌한 격발음
-          this._tone(520, 150, 0.06, 'square', 0.14);
+          // 궁수 일격필살 화살 발사음
+          this._tone(680, 200, 0.1, 'triangle', 0.22);
+          this._tone(1600, 620, 0.06, 'sine', 0.12);
         }
+        break;
+
+
+      case 'bow_draw_start':
+        // 활 시위 당김음 (팽팽해지는 저음 텐션)
+        this._tone(180, 320, 0.16, 'triangle', 0.1);
+        break;
+
+      case 'bow_cancel':
+        this._tone(240, 120, 0.08, 'triangle', 0.08);
+        break;
+
+      case 'bow_full_charged':
+        // 풀차지 도달음 (맑은 마력 공명음)
+        this._tone(680, 1040, 0.14, 'sine', 0.16);
+        this._tone(1040, 1360, 0.1, 'triangle', 0.1, 0.02);
         break;
 
       case 'skill_cast':
@@ -108,7 +124,7 @@ export class SynthAudio {
         break;
 
       case 'class_switch':
-        // 철컥 하는 총기 장전/교체 효과음
+        // 무기 교체 효과음
         this._tone(380, 580, 0.06, 'triangle', 0.16, 0);
         this._tone(620, 840, 0.08, 'square', 0.14, 0.05);
         break;

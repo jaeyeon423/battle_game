@@ -1,8 +1,8 @@
 // ============================================================================
 // [Cross-Platform Automated Verification] Windows & macOS 겸용 AI 자체 검증 스크립트
 // 실행 방법: npm test (또는 node scripts/verify_game.mjs)
-// 1. Headless 물리 시뮬레이션 검증 (8인 원형 스폰 -> 랜덤박스 추첨 -> 자기장 축소 -> 최후의 1인 우승)
-// 2. 실시간 WebSocket 서버 구동 + Headless Chrome/Edge 접속 + 스크린샷 캡처 검증
+// 1. Headless 물리 시뮬레이션 검증 (3대 클래스 밸런스 + 대기실/방장 권한 + 최후의 1인 우승)
+// 2. 실시간 WebSocket 서버 구동 + Headless Chrome/Edge 접속 + 방 생성/방장 시작 스크린샷 검증
 // ============================================================================
 
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WorldSimulation } from '../src/engine/WorldSimulation.js';
-import { WEAPON_LOADOUTS, WEAPON_KEYS } from '../src/shared/constants.js';
+import { WORLD_CONFIG, WEAPON_LOADOUTS, WEAPON_KEYS } from '../src/shared/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -42,31 +42,62 @@ function findBrowserExecutable() {
   return null;
 }
 
-console.log('=== [1/2] 원형 배틀로얄 & 랜덤 무기 박스 6종 물리 시뮬레이션 검증 ===');
+console.log('=== [1/2] 3대 판타지 클래스 밸런스 & 멀티플레이 방/방장 시스템 시뮬레이션 검증 ===');
 
 const sim = new WorldSimulation(20261106);
-const p = sim.addPlayer('p_main', '', 'HERO-USER', false);
+sim.enterWaitingRoom();
+const p = sim.addPlayer('p_main', 'warrior', 'WARRIOR-HOST', false);
 const initSnap = sim.getStateSnapshot();
 
-assert.equal(initSnap.roundState, 'roulette', '시작 시 상태가 roulette(랜덤박스 추첨)이어야 합니다.');
-assert.equal(initSnap.totalCount, 8, '8인 원형 배틀로얄 참가자가 구성되어야 합니다.');
+assert.equal(initSnap.roundState, 'waiting', '대기실 진입 시 상태가 waiting이어야 합니다.');
+assert.equal(initSnap.hostId, 'p_main', '첫 번째 입장 유저가 방장(hostId)이어야 합니다.');
 
-// 6종 총기 전환 및 격발/스킬 정상 작동 확인
-for (const weaponId of WEAPON_KEYS) {
-  const spec = WEAPON_LOADOUTS[weaponId];
-  sim.switchPlayerClass('p_main', weaponId);
-  assert.equal(p.classId, weaponId, `총기 전환 실패: ${weaponId}`);
-  assert.ok(spec.skill1 && spec.skill2, `스킬 정의 누락: ${weaponId}`);
-}
-console.log(`✔ [PASS] 랜덤박스 6종 총기(${WEAPON_KEYS.join(', ')}) 스펙 및 장착 검증 완료`);
+// 2번째 실제 유저 입장 시: auto 봇 모드에서는 AI 봇이 제거되고 실제 유저 2명만 대결해야 함
+const pGuest = sim.addPlayer('p_guest', 'archer', 'ARCHER-GUEST', false);
+assert.equal(sim.players.size, 2, '유저 2명 입장 시 AI 봇이 제거되고 유저 2명만 남아야 합니다.');
+assert.equal(sim.hostStartGame('p_guest'), false, '방장이 아닌 일반 참가자는 게임을 시작할 수 없어야 합니다.');
+assert.equal(sim.roundState, 'waiting', '일반 참가자 시작 시도 후에도 waiting 상태가 유지되어야 합니다.');
+
+// 게스트 퇴장 후 1인 연습 모드로 전환 검증
+sim.removePlayer('p_guest');
+assert.equal(sim.hostId, 'p_main', '방장이 유지되어야 합니다.');
+assert.equal(sim.players.size, 2, '1인일 때는 연습용 AI 봇 1명이 자동 참가해야 합니다.');
+
+// 방장이 게임 시작 호출!
+assert.equal(sim.hostStartGame('p_main'), true, '방장은 게임을 시작할 수 있어야 합니다.');
+assert.equal(sim.roundState, 'roulette', '방장이 게임을 시작하면 roulette 상태로 전환되어야 합니다.');
+console.log('✔ [PASS] 멀티플레이 대기실 · 방장 권한 · 유저 간 매칭 규칙 검증 완료');
+
+// [밸런스 검증 1] 전사: 근접 공격(isMelee=true, 투사체 없음), 초고속 이동(speed 215), 높은 체력(HP 580)
+const warriorSpec = WEAPON_LOADOUTS.warrior;
+assert.ok(warriorSpec.isMelee, '전사는 근접 공격 전용이어야 합니다.');
+assert.ok(warriorSpec.speed > WEAPON_LOADOUTS.archer.speed, '전사는 궁수보다 빨라야 합니다.');
+assert.ok(warriorSpec.hp > WEAPON_LOADOUTS.archer.hp && warriorSpec.hp > WEAPON_LOADOUTS.mage.hp, '전사는 체력이 가장 높아야 합니다.');
+
+// [밸런스 검증 2] 궁수: 원거리(isMelee=false), 초강력 대미지(125), 1발 장전 필요(maxAmmo=1, reloadTime 1.5s)
+const archerSpec = WEAPON_LOADOUTS.archer;
+assert.ok(!archerSpec.isMelee, '궁수는 원거리 공격이어야 합니다.');
+assert.ok(archerSpec.bulletDamage > warriorSpec.bulletDamage && archerSpec.bulletDamage > WEAPON_LOADOUTS.mage.bulletDamage, '궁수는 데미지가 가장 강력해야 합니다.');
+assert.equal(archerSpec.maxAmmo, 1, '궁수는 탄창이 1발이어야 합니다.');
+assert.ok(archerSpec.reloadTime >= 1.4, '궁수는 1발 쏘고 1.5초 장전이 필요합니다.');
+
+// [밸런스 검증 3] 마법사: 원거리, 궁수보다 약한 대미지(42), 부가 효과(둔화 40% + 화상 DoT + 75px 광역 폭발)
+const mageSpec = WEAPON_LOADOUTS.mage;
+assert.ok(!mageSpec.isMelee, '마법사는 원거리 공격이어야 합니다.');
+assert.ok(mageSpec.bulletDamage < archerSpec.bulletDamage, '마법사는 궁수보다 데미지가 약해야 합니다.');
+assert.ok(mageSpec.debuff && mageSpec.debuff.slowRate === 0.40, '마법사는 40% 둔화 부가 효과를 지녀야 합니다.');
+assert.ok(mageSpec.debuff && mageSpec.debuff.burnDamage > 0, '마법사는 화상 DoT 부가 효과를 지녀야 합니다.');
+assert.ok(mageSpec.bulletSplashRadius >= 70, '마법사는 광역 폭발 범위를 지녀야 합니다.');
+
+console.log('✔ [PASS] 3대 판타지 클래스(전사·궁수·마법사) 밸런스 규칙 검증 완료');
 
 // 새 라운드 시작 후 최후의 1인 시뮬레이션 검증
 sim.startNewRound();
-for (let i = 0; i < 60 * 3.1; i++) sim.step(1 / 60);
-assert.equal(sim.roundState, 'combat', '3초 랜덤박스 추첨 후 combat 상태로 전환되어야 합니다.');
+for (let i = 0; i < 60 * (WORLD_CONFIG.ROULETTE_DURATION + 0.2); i++) sim.step(1 / 60);
+assert.equal(sim.roundState, 'combat', '랜덤박스 추첨 후 combat 상태로 전환되어야 합니다.');
 
 let winnerFound = false;
-for (let i = 0; i < 60 * 55; i++) {
+for (let i = 0; i < 60 * 200; i++) {
   if (p.alive) {
     let target = null;
     let minD = Infinity;
@@ -84,7 +115,7 @@ for (let i = 0; i < 60 * 55; i++) {
         moveX: Math.cos(ang) * 0.5,
         moveY: Math.sin(ang) * 0.5,
         aimAngle: ang,
-        isFiring: true,
+        isFiring: i % 30 < 22,
         skill1Pressed: i % 90 === 0,
         skill2Pressed: i % 120 === 0,
       });
@@ -108,7 +139,7 @@ if (!browserPath) {
   process.exit(0);
 }
 
-console.log(`\n=== [2/2] Headless 브라우저(${path.basename(browserPath)}) 실시간 렌더링 & 콘솔 에러 검증 ===`);
+console.log(`\n=== [2/2] Headless 브라우저(${path.basename(browserPath)}) 모바일 대기실 · 방 생성 · 방장 게임 시작 검증 ===`);
 
 const TEST_PORT = 8096;
 const serverProc = spawn(process.execPath, [path.join(ROOT_DIR, 'server', 'index.js')], {
@@ -129,9 +160,9 @@ const browser = spawn(
     '--headless=new',
     '--disable-gpu',
     '--no-sandbox',
-    '--window-size=1366,768',
+    '--window-size=960,540',
     `--remote-debugging-port=${debugPort}`,
-    `http://127.0.0.1:${TEST_PORT}/?room=ROYALE-01&name=CHAMP-USER`,
+    `http://127.0.0.1:${TEST_PORT}/?room=ROYALE-01&name=HOST-KING`,
   ],
   { stdio: 'ignore' }
 );
@@ -180,27 +211,99 @@ try {
   await sendCdp('Page.enable');
   await sendCdp('Runtime.enable');
 
-  await new Promise((r) => setTimeout(r, 1400));
   const outDir = path.join(ROOT_DIR, 'screenshots');
   await fsp.mkdir(outDir, { recursive: true });
+
+  // 1. 최초 접속 시 로그인 / 회원가입 화면(#authOverlay) 캡처
+  await new Promise((r) => setTimeout(r, 800));
+  const shotLogin = await sendCdp('Page.captureScreenshot', { format: 'png' });
+  const shotLoginPath = path.join(outDir, 'verify_login.png');
+  await fsp.writeFile(shotLoginPath, Buffer.from(shotLogin.result.data, 'base64'));
+  console.log(`✔ [PASS] 최초 접속 로그인/회원가입 화면 캡처: ${shotLoginPath}`);
+
+  // 2. 운영자 계정(kim423 / 1234 -> 닉네임 '재연킴') 로그인 -> 방 목록(#roomBrowserOverlay) 단독 화면 캡처
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      document.getElementById('tabLoginBtn').click();
+      document.getElementById('authUsernameInput').value = 'kim423';
+      document.getElementById('authPasswordInput').value = '1234';
+      document.getElementById('authSubmitBtn').click();
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  const shotBrowser = await sendCdp('Page.captureScreenshot', { format: 'png' });
+  const shotBrowserPath = path.join(outDir, 'verify_room_browser.png');
+  await fsp.writeFile(shotBrowserPath, Buffer.from(shotBrowser.result.data, 'base64'));
+  console.log(`✔ [PASS] 로그인 직후 방 리스트 화면(우측 상단 ➕ 방 만들기 버튼 포함) 캡처: ${shotBrowserPath}`);
+
+  // 3. 우측 상단 [➕ 방 만들기] 버튼 클릭 -> 새 방 만들기 전용 모달(#createRoomOverlay) 캡처
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      document.getElementById('openCreateRoomModalBtn').click();
+      document.getElementById('createRoomNameInput').value = '최강자전 1대1 결투방';
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 350));
+  const shotCreateModal = await sendCdp('Page.captureScreenshot', { format: 'png' });
+  const shotCreateModalPath = path.join(outDir, 'verify_create_room_modal.png');
+  await fsp.writeFile(shotCreateModalPath, Buffer.from(shotCreateModal.result.data, 'base64'));
+  console.log(`✔ [PASS] 우측 상단 [➕ 방 만들기] 전용 모달 캡처: ${shotCreateModalPath}`);
+
+  // 4. [🚀 방 만들고 방장으로 입장하기] 클릭 -> 방 대기실(#waitingRoomOverlay) 캡처
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      document.getElementById('createRoomConfirmBtn').click();
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  const shotWait = await sendCdp('Page.captureScreenshot', { format: 'png' });
+  const shotWaitPath = path.join(outDir, 'verify_waiting_room.png');
+  await fsp.writeFile(shotWaitPath, Buffer.from(shotWait.result.data, 'base64'));
+  console.log(`✔ [PASS] 방 생성 후 모바일 대기실(방장 화면) 캡처: ${shotWaitPath}`);
+
+  // 5. 대기실에서 [⚔️ 기동 돌격 전사] 직업 선택 후 방장이 [🚀 게임 시작하기] 클릭 -> 룰렛 모달 캡처
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      const wBtn = document.querySelector('#waitClassGrid .wait-class-btn[data-class="warrior"]');
+      if (wBtn) wBtn.click();
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 200));
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      document.getElementById('hostStartBtn').click();
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 800));
 
   const shotBox = await sendCdp('Page.captureScreenshot', { format: 'png' });
   const shotBoxPath = path.join(outDir, 'verify_random_box.png');
   await fsp.writeFile(shotBoxPath, Buffer.from(shotBox.result.data, 'base64'));
-  console.log(`✔ [PASS] 시작 시 랜덤 무기 박스 모달 캡처: ${shotBoxPath}`);
+  console.log(`✔ [PASS] 방장 게임 시작 후 룰렛 모달 캡처: ${shotBoxPath}`);
 
-  await new Promise((r) => setTimeout(r, 2300));
+  // 4. 2.5초 대기 후 원형 경기장 진입 -> 우측 공격 스틱을 당겨 전사 대검 휘두르기(Swing) 발동 순간 캡처!
+  await new Promise((r) => setTimeout(r, 2500));
+  await sendCdp('Runtime.evaluate', {
+    expression: `
+      const rz = document.getElementById('rightStickZone');
+      const rect = rz.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      rz.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: cx, clientY: cy, bubbles: true }));
+      rz.dispatchEvent(new PointerEvent('pointermove', { pointerId: 2, clientX: cx + 38, clientY: cy, bubbles: true }));
+    `,
+  });
+  await new Promise((r) => setTimeout(r, 85));
   const shotCombat = await sendCdp('Page.captureScreenshot', { format: 'png' });
   const shotCombatPath = path.join(outDir, 'verify_circle_combat.png');
   await fsp.writeFile(shotCombatPath, Buffer.from(shotCombat.result.data, 'base64'));
-  console.log(`✔ [PASS] 원형 경기장 전투 화면 캡처: ${shotCombatPath}`);
+  console.log(`✔ [PASS] 원형 경기장 전사 대검 휘두르기 모션 캡처: ${shotCombatPath}`);
 
-  assert.equal(consoleErrors.length, 0, `콘솔 에러 발생: ${consoleErrors.join(', ')}`);
-  console.log('✔ [PASS] 브라우저 런타임 에러 0건');
   cdp.close();
+  assert.equal(consoleErrors.length, 0, `런타임 에러 발생: ${consoleErrors.join(', ')}`);
+  console.log('✔ [PASS] 브라우저 런타임 에러 0건');
+  console.log('\n🎉 모든 자동화 검증 통과!');
 } finally {
   browser.kill();
   serverProc.kill();
 }
-
-console.log('\n🎉 모든 자동화 검증 통과!');

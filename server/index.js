@@ -1,7 +1,7 @@
 // ============================================================================
-// [Server] 판타지 성 방어전 (CASTLE DEFENSE) 실시간 멀티플레이 Node.js 게임 서버
+// [Server] 원형 배틀로얄 (CIRCLE ROYALE) 실시간 멀티플레이 Node.js 게임 서버
 // - 외부 패키지 의존성 0개 (Node.js 내장 http, crypto, fs만으로 HTTP + WebSocket 구동)
-// - 다중 방(Room) 생성/입장, 3대 직업(전사·궁수·마법사) 파티 동기화, 30Hz 권위 서버 루프
+// - 방 생성(Create Room), 대기실(Waiting Room), 방장(Host) 권한 게임 시작, 30Hz 권위 서버 루프
 // ============================================================================
 
 import http from 'node:http';
@@ -113,23 +113,31 @@ function decodeWsFrames(buffer) {
 }
 
 // ============================================================================
-// 2. 멀티플레이어 방(Room) 및 월드 시뮬레이션 매니저
+// 2. 멀티플레이어 방(Room) 및 방장(Host) 관리 매니저
 // ============================================================================
 
 class GameRoom {
-  constructor(roomId) {
+  constructor(roomId, options = {}) {
     this.roomId = roomId;
-    this.sim = new WorldSimulation(20261104);
+    this.roomName = String(options.roomName || `${roomId} 결투장`).slice(0, 24);
+    this.maxPlayers = Math.max(2, Math.min(8, Number(options.maxPlayers) || 4));
+    this.sim = new WorldSimulation(Date.now() & 0x7fffffff);
+    this.sim.roomName = this.roomName;
+    this.sim.maxPlayers = this.maxPlayers;
+    this.sim.botFillMode = options.botFillMode || 'auto';
+    this.sim.returnToWaitingAfterRound = true;
+    this.sim.enterWaitingRoom();
+
     this.clients = new Map(); // Map<playerId, socket>
     this.lastStepTime = performance.now();
   }
 
   addClient(playerId, socket, playerName, preferredClass) {
+    const cleanName = String(playerName || '').trim().slice(0, 14);
     const safeName =
-      playerName || `SOLDIER-${String(this.clients.size + 1).padStart(2, '0')}`;
+      cleanName || `HERO-${String(this.clients.size + 1).padStart(2, '0')}`;
 
     this.clients.set(playerId, socket);
-    // preferredClass가 없으면 WorldSimulation.addPlayer 내부에서 랜덤박스 무기를 무작위로 추첨합니다!
     const player = this.sim.addPlayer(playerId, preferredClass || '', safeName, false);
     return player;
   }
@@ -137,23 +145,29 @@ class GameRoom {
   removeClient(playerId) {
     this.clients.delete(playerId);
     this.sim.removePlayer(playerId);
+    // 방에 남은 유저가 없고 게임 중이었다면 대기실 상태로 초기화
+    if (this.clients.size === 0 && this.sim.roundState !== 'waiting') {
+      this.sim.enterWaitingRoom();
+    }
   }
 
-  stepAndBroadcast() {
-    const now = performance.now();
-    const dt = Math.min(0.05, Math.max(0.005, (now - this.lastStepTime) / 1000));
-    this.lastStepTime = now;
+  getHostName() {
+    const hostId = this.sim.hostId;
+    if (!hostId) return '대기중';
+    const hostPlayer = this.sim.players.get(hostId);
+    return hostPlayer ? hostPlayer.name : '대기중';
+  }
 
-    if (this.clients.size === 0) return;
-
-    this.sim.step(dt);
+  broadcastNow() {
     const snapshot = this.sim.getStateSnapshot();
-
     const packet = encodeWsFrame(
       JSON.stringify({
         type: 'state',
         roomId: this.roomId,
+        roomName: this.roomName,
+        hostId: this.sim.hostId,
         onlineCount: this.clients.size,
+        maxPlayers: this.maxPlayers,
         snapshot,
       })
     );
@@ -170,29 +184,86 @@ class GameRoom {
       }
     }
   }
+
+  stepAndBroadcast() {
+    const now = performance.now();
+    const dt = Math.min(0.05, Math.max(0.005, (now - this.lastStepTime) / 1000));
+    this.lastStepTime = now;
+
+    if (this.clients.size === 0) return;
+
+    this.sim.step(dt);
+    this.broadcastNow();
+  }
 }
 
 const rooms = new Map();
+const userAccounts = new Map(); // Map<usernameLower, { username, password, nickname, isAdmin }>
+// 기본 운영자(Admin) 계정 사전 등록
+userAccounts.set('kim423', {
+  username: 'kim423',
+  password: '1234',
+  nickname: '재연킴',
+  isAdmin: true,
+});
 let nextClientCounter = 1;
+let nextRoomSeq = 101;
 
-function getOrCreateRoom(roomId = 'ALPHA-01') {
-  const cleanId = String(roomId).trim().toUpperCase().slice(0, 16) || 'ALPHA-01';
+function sanitizeRoomId(roomId) {
+  return (
+    String(roomId || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9_-]/g, '')
+      .slice(0, 16) || 'ROYALE-01'
+  );
+}
+
+function getOrCreateRoom(roomId = 'ROYALE-01', options = {}) {
+  const cleanId = sanitizeRoomId(roomId);
   if (!rooms.has(cleanId)) {
-    rooms.set(cleanId, new GameRoom(cleanId));
-    console.log(`[Room Created] 작전방 생성됨: ${cleanId}`);
+    rooms.set(cleanId, new GameRoom(cleanId, options));
+    console.log(`[Room Created] 방 생성됨: ${cleanId} (${options.roomName || '기본 결투장'})`);
+  } else if (options.roomName) {
+    const existing = rooms.get(cleanId);
+    if (existing.clients.size === 0) {
+      existing.roomName = String(options.roomName).slice(0, 24);
+      existing.sim.roomName = existing.roomName;
+      if (options.maxPlayers) {
+        existing.maxPlayers = Math.max(2, Math.min(8, Number(options.maxPlayers) || 4));
+        existing.sim.maxPlayers = existing.maxPlayers;
+      }
+      if (options.botFillMode) {
+        existing.sim.botFillMode = options.botFillMode;
+      }
+    }
   }
   return rooms.get(cleanId);
 }
 
+function getRoomListSummary() {
+  return Array.from(rooms.values()).map((r) => ({
+    roomId: r.roomId,
+    roomName: r.roomName,
+    hostId: r.sim.hostId,
+    hostName: r.getHostName(),
+    onlineCount: r.clients.size,
+    maxPlayers: r.maxPlayers,
+    roundState: r.sim.roundState,
+    botFillMode: r.sim.botFillMode,
+    round: r.sim.round,
+  }));
+}
+
 // 기본 오픈 방 생성
-getOrCreateRoom('ALPHA-01');
+getOrCreateRoom('ROYALE-01', { roomName: '공식 1번 결투장', maxPlayers: 4 });
 
 // 서버 메인 물리 루프 (30Hz)
 setInterval(() => {
   for (const [roomId, room] of rooms.entries()) {
     room.stepAndBroadcast();
     // 기본 방이 아닌데 인원이 0명이면 정리
-    if (roomId !== 'ALPHA-01' && room.clients.size === 0) {
+    if (roomId !== 'ROYALE-01' && room.clients.size === 0) {
       rooms.delete(roomId);
     }
   }
@@ -206,19 +277,20 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
+    // 클라우드 배포 환경 헬스체크 API
+    if (url.pathname === '/health' || url.pathname === '/healthz') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'ok', uptime: Math.round(process.uptime()) }));
+      return;
+    }
+
     // 활성 방 목록 조회 API
     if (url.pathname === '/api/rooms') {
-      const roomList = Array.from(rooms.values()).map((r) => ({
-        roomId: r.roomId,
-        onlineCount: r.clients.size,
-        wave: r.sim.wave,
-        baseHp: r.sim.baseHp,
-      }));
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
       });
-      res.end(JSON.stringify({ status: 'ok', rooms: roomList }));
+      res.end(JSON.stringify({ status: 'ok', rooms: getRoomListSummary() }));
       return;
     }
 
@@ -271,6 +343,47 @@ server.on('upgrade', (req, socket) => {
   let currentRoom = null;
   let recvBuffer = Buffer.alloc(0);
 
+  const sendJson = (obj) => {
+    if (!socket.destroyed && socket.writable) {
+      try {
+        socket.write(encodeWsFrame(JSON.stringify(obj)));
+      } catch {}
+    }
+  };
+
+  const joinRoomInternal = (targetRoomId, msg, options = {}) => {
+    if (currentRoom) {
+      currentRoom.removeClient(playerId);
+      currentRoom.broadcastNow();
+    }
+    currentRoom = getOrCreateRoom(targetRoomId, options);
+    const player = currentRoom.addClient(
+      playerId,
+      socket,
+      msg.name,
+      msg.classId
+    );
+
+    sendJson({
+      type: 'welcome',
+      playerId,
+      roomId: currentRoom.roomId,
+      roomName: currentRoom.roomName,
+      hostId: currentRoom.sim.hostId,
+      classId: player.classId,
+      playerName: player.name,
+      onlineCount: currentRoom.clients.size,
+      maxPlayers: currentRoom.maxPlayers,
+      snapshot: currentRoom.sim.getStateSnapshot(),
+      rooms: getRoomListSummary(),
+    });
+
+    currentRoom.broadcastNow();
+    console.log(
+      `[Join] ${player.name} (${player.classId}) -> Room [${currentRoom.roomId}] (방장: ${currentRoom.sim.hostId}, 인원: ${currentRoom.clients.size}/${currentRoom.maxPlayers}명)`
+    );
+  };
+
   socket.on('data', (chunk) => {
     recvBuffer = Buffer.concat([recvBuffer, chunk]);
     const { messages, remaining } = decodeWsFrames(recvBuffer);
@@ -282,48 +395,140 @@ server.on('upgrade', (req, socket) => {
         return;
       }
 
-      if (msg.type === 'join') {
-        if (currentRoom) {
-          currentRoom.removeClient(playerId);
-        }
-        currentRoom = getOrCreateRoom(msg.roomId || 'CASTLE-01');
-        const player = currentRoom.addClient(
-          playerId,
-          socket,
-          msg.name,
-          msg.classId
-        );
+      if (msg.type === 'auth_login' || msg.type === 'auth_signup') {
+        const rawUser = String(msg.username || '').trim().slice(0, 16) || `user${nextClientCounter}`;
+        const key = rawUser.toLowerCase();
+        const rawPass = String(msg.password || '');
+        const rawNick = String(msg.nickname || '').trim().slice(0, 12);
 
-        socket.write(
-          encodeWsFrame(
-            JSON.stringify({
-              type: 'welcome',
-              playerId,
-              roomId: currentRoom.roomId,
-              classId: player.classId,
-              playerName: player.name,
-              onlineCount: currentRoom.clients.size,
-              snapshot: currentRoom.sim.getStateSnapshot(),
-            })
-          )
-        );
-        console.log(
-          `[Join] ${player.name} (${player.classId}) -> Room [${currentRoom.roomId}] (접속자: ${currentRoom.clients.size}명)`
-        );
+        let acc = userAccounts.get(key);
+        if (acc && acc.password && msg.type === 'auth_login' && rawPass !== acc.password) {
+          sendJson({
+            type: 'auth_error',
+            message: '비밀번호가 일치하지 않습니다.',
+          });
+          continue;
+        }
+
+        if (!acc) {
+          acc = {
+            username: rawUser,
+            password: rawPass,
+            nickname: rawNick || rawUser.slice(0, 12),
+            isAdmin: false,
+          };
+          userAccounts.set(key, acc);
+        } else if (msg.type === 'auth_signup' && rawNick) {
+          acc.nickname = rawNick;
+        }
+
+        sendJson({
+          type: 'auth_ok',
+          playerId,
+          username: acc.username,
+          nickname: acc.nickname,
+          isAdmin: Boolean(acc.isAdmin),
+          rooms: getRoomListSummary(),
+        });
+      } else if (msg.type === 'leave_room') {
+        if (currentRoom) {
+          const prev = currentRoom;
+          currentRoom = null;
+          prev.removeClient(playerId);
+          prev.broadcastNow();
+        }
+        sendJson({
+          type: 'room_list',
+          rooms: getRoomListSummary(),
+        });
+      } else if (msg.type === 'create_room') {
+        // 새로운 방 코드 발급 또는 지정된 방 코드로 새 방 생성
+        let newRoomId = msg.roomId ? sanitizeRoomId(msg.roomId) : `ROOM-${nextRoomSeq++}`;
+        while (!msg.roomId && rooms.has(newRoomId)) {
+          newRoomId = `ROOM-${nextRoomSeq++}`;
+        }
+        const defaultTitle = msg.name ? `${String(msg.name).slice(0, 10)}의 결투장` : `${newRoomId} 결투장`;
+        joinRoomInternal(newRoomId, msg, {
+          roomName: msg.roomName || defaultTitle,
+          maxPlayers: msg.maxPlayers || 4,
+          botFillMode: msg.botFillMode || 'auto',
+        });
+      } else if (msg.type === 'join') {
+        joinRoomInternal(msg.roomId || 'ROYALE-01', msg, {
+          roomName: msg.roomName,
+          maxPlayers: msg.maxPlayers,
+          botFillMode: msg.botFillMode,
+        });
+      } else if (msg.type === 'list_rooms') {
+        sendJson({
+          type: 'room_list',
+          rooms: getRoomListSummary(),
+        });
+      } else if (msg.type === 'host_start_game' && currentRoom) {
+        // 방장 권한 확인 후 게임 시작!
+        const started = currentRoom.sim.hostStartGame(playerId);
+        if (started) {
+          console.log(`[Game Start] 방장(${playerId})이 Room [${currentRoom.roomId}] 게임을 시작했습니다!`);
+          currentRoom.broadcastNow();
+        } else {
+          sendJson({
+            type: 'error_msg',
+            message: '방장만 게임을 시작할 수 있습니다.',
+          });
+        }
+      } else if (msg.type === 'start_new_round' && currentRoom) {
+        // 방장이거나 1인 연습 모드일 때 라운드 시작 허용
+        if (currentRoom.sim.hostId === playerId || currentRoom.clients.size <= 1) {
+          currentRoom.sim.startNewRound();
+          currentRoom.broadcastNow();
+        }
+      } else if (msg.type === 'return_to_waiting' && currentRoom) {
+        if (currentRoom.sim.hostId === playerId || currentRoom.clients.size <= 1) {
+          currentRoom.sim.enterWaitingRoom();
+          currentRoom.broadcastNow();
+        }
+      } else if (msg.type === 'toggle_ready' && currentRoom) {
+        const p = currentRoom.sim.players.get(playerId);
+        if (p && !p.isHost) {
+          p.ready = !p.ready;
+          currentRoom.broadcastNow();
+        }
+      } else if (msg.type === 'set_room_config' && currentRoom) {
+        if (currentRoom.sim.hostId === playerId) {
+          if (msg.botFillMode && ['auto', 'on', 'off'].includes(msg.botFillMode)) {
+            currentRoom.sim.botFillMode = msg.botFillMode;
+            currentRoom.sim._syncArenaBots();
+            if (currentRoom.sim.roundState === 'waiting') {
+              currentRoom.sim._positionAllFightersInCircle();
+            }
+          }
+          if (msg.maxPlayers) {
+            currentRoom.maxPlayers = Math.max(2, Math.min(8, Number(msg.maxPlayers) || 4));
+            currentRoom.sim.maxPlayers = currentRoom.maxPlayers;
+            currentRoom.sim._syncArenaBots();
+          }
+          if (msg.roomName) {
+            currentRoom.roomName = String(msg.roomName).trim().slice(0, 24) || currentRoom.roomName;
+            currentRoom.sim.roomName = currentRoom.roomName;
+          }
+          currentRoom.broadcastNow();
+        }
+      } else if (msg.type === 'set_name' && currentRoom && msg.name) {
+        const updated = currentRoom.sim.setPlayerName(playerId, msg.name);
+        if (updated) {
+          currentRoom.broadcastNow();
+        }
       } else if (msg.type === 'input' && currentRoom && msg.cmd) {
         currentRoom.sim.applyInput(playerId, msg.cmd);
       } else if (msg.type === 'switch_class' && currentRoom && msg.classId) {
         currentRoom.sim.switchPlayerClass(playerId, msg.classId);
-      } else if (msg.type === 'start_new_round' && currentRoom) {
-        currentRoom.sim.startNewRound();
+        currentRoom.broadcastNow();
       } else if (msg.type === 'toggle_party' && currentRoom) {
         const on = currentRoom.sim.setPartyMode(
           !currentRoom.sim.partyEnabled,
           playerId
         );
-        socket.write(
-          encodeWsFrame(JSON.stringify({ type: 'party_status', enabled: on }))
-        );
+        sendJson({ type: 'party_status', enabled: on });
       } else if (msg.type === 'toggle_swarm' && currentRoom) {
         currentRoom.sim.swarmEnabled = !currentRoom.sim.swarmEnabled;
       }
@@ -332,11 +537,13 @@ server.on('upgrade', (req, socket) => {
 
   const cleanup = () => {
     if (currentRoom) {
-      currentRoom.removeClient(playerId);
-      console.log(
-        `[Leave] ${playerId} 퇴장 -> Room [${currentRoom.roomId}] (남은 인원: ${currentRoom.clients.size}명)`
-      );
+      const prevRoom = currentRoom;
       currentRoom = null;
+      prevRoom.removeClient(playerId);
+      prevRoom.broadcastNow();
+      console.log(
+        `[Leave] ${playerId} 퇴장 -> Room [${prevRoom.roomId}] (남은 인원: ${prevRoom.clients.size}명, 새 방장: ${prevRoom.sim.hostId || '없음'})`
+      );
     }
   };
 
@@ -346,7 +553,7 @@ server.on('upgrade', (req, socket) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`====================================================================`);
-  console.log(`🏰 CASTLE DEFENSE 멀티플레이 게임 서버 가동 완료!`);
+  console.log(`⚔️ CIRCLE ROYALE 멀티플레이 게임 서버 가동 완료!`);
   console.log(`🌐 웹 클라이언트 접속: http://localhost:${PORT}`);
   console.log(`🔌 실시간 WebSocket: ws://localhost:${PORT}/ws (${SERVER_TICK_HZ}Hz Tick)`);
   console.log(`====================================================================`);
