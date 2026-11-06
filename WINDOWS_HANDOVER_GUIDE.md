@@ -1,6 +1,26 @@
-# 🖥️ Windows 작업 전환 및 프로젝트 인수인계 문서 (`CIRCLE ROYALE`)
+# 🖥️ Windows에서 AI 작업을 100% 그대로 이어가는 가이드 (`CIRCLE ROYALE`)
 
-이 문서는 Mac 환경에서 개발·검증 완료된 **원형 배틀로얄: 랜덤 무기 서바이벌 (`CIRCLE ROYALE`)** 프로젝트를 **Windows PC 환경에서 즉시 이어서 작업**할 수 있도록 필요한 준비물, 실행 절차, 현재까지 구현된 아키텍처와 파일별 수정 포인트를 정리한 가이드입니다.
+이 문서는 Mac에서 진행하던 **AI 페어 프로그래밍 세션(맥락, 설계 히스토리, 자동 검증 방식)** 을 **Windows PC의 AI 에이전트(Antigravity 등)에서 끊김 없이 그대로 이어가기 위해** 작성되었습니다.
+
+---
+
+## 🤖 0. [가장 중요] Windows에서 AI 작업을 바로 이어가는 방법
+
+프로젝트 루트에 AI 에이전트가 자동으로 읽는 규칙 파일인 **`AGENTS.md`** 와 **`GEMINI.md`**, 그리고 크로스플랫폼 자동 검증 스크립트인 **`scripts/verify_game.mjs` (`npm test`)** 를 함께 탑재해 두었습니다.
+
+### 단계별 진행 방법 (Windows PC)
+1. **GitHub에서 프로젝트 클론**:
+   ```powershell
+   git clone https://github.com/jaeyeon423/battle_game.git
+   cd battle_game
+   ```
+2. **Antigravity (또는 사용하시는 AI 코딩 툴)에서 `battle_game` 폴더를 워크스페이스로 열기**:
+   - 폴더를 여는 순간, AI 에이전트가 루트의 **`AGENTS.md` / `GEMINI.md`** 를 **자동으로 시스템 컨텍스트에 로드**합니다.
+3. **새 채팅창에 아래 첫 마디(프롬프트)만 복사해서 붙여넣기**:
+   ```text
+   AGENTS.md와 WINDOWS_HANDOVER_GUIDE.md를 읽고 현재까지 작업한 원형 배틀로얄(CIRCLE ROYALE) 상태를 파악해줘. 그리고 서버를 띄운 뒤 이어서 작업할 준비를 해줘.
+   ```
+   - 위 한 줄만 입력하면 Windows의 AI가 **이전 대화에서 거친 모든 과정(방어전 ➔ 판타지 3직업 ➔ 군인 총기 다양화 ➔ 현재의 원형 배틀로얄 & 랜덤 무기 박스)** 과 **코드 구현 후 스스로 `npm test` 및 브라우저 캡처로 검증하는 규칙**까지 100% 동일하게 기억하고 작업을 이어갑니다!
 
 ---
 

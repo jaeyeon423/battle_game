@@ -6,7 +6,8 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "test": "node scripts/verify_game.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
