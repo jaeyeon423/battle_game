@@ -1,7 +1,7 @@
 // ============================================================================
 // [Client] 메인 엔트리 포인트 — 원형 배틀로얄: 모바일 멀티플레이 & 방장 시작 시스템
-// - 방 생성(Create Room) · 실시간 방 목록 · 대기실(Waiting Room) · 방장(Host) 게임 시작
-// - 시작 시 랜덤 무기 박스(룰렛) 추첨 연출 + 최후의 1인 서바이벌
+// - 세로(Portrait) 화면 시 자동 90도 가로 회전(.force-landscape) 및 전체화면(Fullscreen) 지원
+// - 자동 조준 보조(Auto-Aim Assist) + HUD DOM 캐싱으로 모바일 60FPS 최적화
 // ============================================================================
 
 import { WEAPON_KEYS, resolveWeaponSpec, WORLD_CONFIG } from '../shared/constants.js';
@@ -50,6 +50,11 @@ class GameClient {
     this.roomBrowserOpen = false;
     this.availableRooms = [];
 
+    // DOM 리플로우 방지용 캐시 문자열
+    this._cachedRosterHtml = '';
+    this._cachedKillFeedHtml = '';
+    this._cachedWaitListHtml = '';
+
     // 접속 시에는 방에 바로 들어가지 않고 로그인 -> 방 목록 순서로 진행
     this.localPlayerId = this.transport.connect(initName, initClass, initRoomParam, false);
     this.latestSnapshot = this.transport.displaySnapshot;
@@ -70,6 +75,7 @@ class GameClient {
       skill2Btn: $('skill2Btn'),
       onInteract: () => this.audio.unlock(),
       onSelectClass: (classId) => this.selectClass(classId),
+      getAutoAimAngle: () => this._findNearestEnemyAngle(),
     });
 
     this.transport.onStatusUpdate((status) => {
@@ -78,9 +84,9 @@ class GameClient {
       const roomBtn = $('roomChangeBtn');
       if (status.isOnline) {
         if (roomEl) roomEl.textContent = `🟢 ${status.roomId} (${status.onlineCount}P)`;
-        if (roomBtn) roomBtn.textContent = `🏠 방 목록 (${status.roomId} · ${status.onlineCount}명)`;
+        if (roomBtn) roomBtn.textContent = `🏠 방 목록`;
       } else {
-        if (roomEl) roomEl.textContent = `⚪ OFFLINE (LOCAL)`;
+        if (roomEl) roomEl.textContent = `⚪ OFFLINE`;
       }
 
       if (status.isWelcome) {
@@ -114,7 +120,7 @@ class GameClient {
       const profileEl = $('lobbyUserProfileText');
       if (profileEl) profileEl.textContent = `${rolePrefix}${finalNick} (${this.currentUser})`;
       const nickBtn = $('nicknameBtn');
-      if (nickBtn) nickBtn.textContent = `✏️ 닉네임: ${finalNick}`;
+      if (nickBtn) nickBtn.textContent = `✏️ ${finalNick}`;
 
       $('authOverlay')?.classList.add('hidden');
       this.openRoomBrowser();
@@ -150,9 +156,62 @@ class GameClient {
     this._bindUI();
     this._handleResize();
     window.addEventListener('resize', () => this._handleResize());
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this._handleResize(), 80);
+    });
 
     this.lastTime = performance.now();
     requestAnimationFrame((t) => this._loop(t));
+  }
+
+  /**
+   * 가장 가까운 생존 적(또는 파괴 가능한 화약통) 방향 각도를 계산하여 모바일 원탭 공격(Auto-Aim)을 돕습니다.
+   */
+  _findNearestEnemyAngle() {
+    const snap = this.latestSnapshot;
+    if (!snap || !snap.players) return null;
+    const me = snap.players.find((p) => p.id === this.localPlayerId);
+    if (!me || !me.alive) return null;
+
+    const myX = typeof me._renderX === 'number' ? me._renderX : me.x;
+    const myY = typeof me._renderY === 'number' ? me._renderY : me.y;
+
+    let bestDistSq = Infinity;
+    let bestAngle = null;
+
+    for (let i = 0; i < snap.players.length; i++) {
+      const other = snap.players[i];
+      if (!other.alive || other.id === me.id) continue;
+      const ox = typeof other._renderX === 'number' ? other._renderX : other.x;
+      const oy = typeof other._renderY === 'number' ? other._renderY : other.y;
+      const dx = ox - myX;
+      const dy = oy - myY;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestDistSq) {
+        bestDistSq = d2;
+        bestAngle = Math.atan2(dy, dx);
+      }
+    }
+
+    return bestAngle;
+  }
+
+  async toggleFullscreenLandscape() {
+    this.audio.unlock();
+    try {
+      const docEl = document.documentElement;
+      if (!document.fullscreenElement && docEl.requestFullscreen) {
+        await docEl.requestFullscreen();
+        if (screen.orientation && screen.orientation.lock) {
+          try {
+            await screen.orientation.lock('landscape');
+          } catch {}
+        }
+      } else if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    } catch {}
+    setTimeout(() => this._handleResize(), 100);
   }
 
   selectClass(classId) {
@@ -223,7 +282,6 @@ class GameClient {
     this.audio.unlock();
     this.roomBrowserOpen = true;
     $('roomBrowserOverlay')?.classList.remove('hidden');
-    // 이미 방에 들어가 있는 상태에서 열었을 때만 [✖ 닫기] 버튼 표시
     $('closeRoomBrowserBtn')?.classList.toggle('hidden', !this.inRoom);
     this.transport.requestRoomList();
   }
@@ -253,7 +311,7 @@ class GameClient {
     if (!listEl) return;
 
     if (!this.availableRooms || this.availableRooms.length === 0) {
-      listEl.innerHTML = `<div class="rb-room-item"><div class="rb-room-info"><b>열려있는 방이 없습니다</b><small>우측에서 새 방을 만들어 방장이 되어보세요!</small></div></div>`;
+      listEl.innerHTML = `<div class="rb-room-item"><div class="rb-room-info"><b>열려있는 방이 없습니다</b><small>우측 상단 [➕ 방 만들기]로 새 방을 만들어 방장이 되어보세요!</small></div></div>`;
       return;
     }
 
@@ -309,9 +367,9 @@ class GameClient {
     const modalInput = $('modalNicknameInput');
     if (modalInput) modalInput.value = clean;
     const nickBtn = $('nicknameBtn');
-    if (nickBtn) nickBtn.textContent = `✏️ 닉네임: ${clean}`;
+    if (nickBtn) nickBtn.textContent = `✏️ ${clean}`;
     const profileEl = $('lobbyUserProfileText');
-    if (profileEl) profileEl.textContent = `👤 ${clean} (${this.currentUser || '게스트'})`;
+    if (profileEl) profileEl.textContent = `${this.isAdmin ? '👑 운영자 · ' : '👤 '}${clean} (${this.currentUser || '게스트'})`;
     this.transport.setPlayerName(clean);
   }
 
@@ -375,7 +433,6 @@ class GameClient {
       this.logout();
     });
 
-    // 방 목록 우측 상단 [➕ 방 만들기] 버튼 -> 방 생성 전용 모달 오픈
     $('openCreateRoomModalBtn')?.addEventListener('click', () => {
       this.openCreateRoomModal();
     });
@@ -385,6 +442,10 @@ class GameClient {
     });
 
     // 1. 상단 HUD 버튼들
+    $('fullscreenBtn')?.addEventListener('click', () => {
+      this.toggleFullscreenLandscape();
+    });
+
     $('roomChangeBtn')?.addEventListener('click', () => {
       this.openRoomBrowser();
     });
@@ -420,7 +481,7 @@ class GameClient {
     const soundBtn = $('soundBtn');
     soundBtn?.addEventListener('click', () => {
       const on = this.audio.toggleMute();
-      soundBtn.textContent = on ? '🔊 사운드 ON' : '🔇 사운드 OFF';
+      soundBtn.textContent = on ? '🔊 사운드' : '🔇 음소거';
       soundBtn.classList.toggle('muted', !on);
     });
 
@@ -486,21 +547,18 @@ class GameClient {
       });
     });
 
-    // 방장 전용: AI 봇 설정 토글
     $('botModeToggleBtn')?.addEventListener('click', () => {
       const cur = this.latestSnapshot?.botFillMode || 'auto';
       const next = cur === 'auto' ? 'off' : cur === 'off' ? 'on' : 'auto';
       this.transport.setRoomConfig({ botFillMode: next });
     });
 
-    // 방장 전용: 최대 인원 토글
     $('maxPlayersToggleBtn')?.addEventListener('click', () => {
       const cur = this.latestSnapshot?.maxPlayers || 4;
       const next = cur === 2 ? 4 : cur === 4 ? 8 : 2;
       this.transport.setRoomConfig({ maxPlayers: next });
     });
 
-    // 방장 전용: 🚀 게임 시작하기 버튼
     $('hostStartBtn')?.addEventListener('click', () => {
       this.audio.unlock();
       const name = this._getEnteredNickname();
@@ -509,7 +567,6 @@ class GameClient {
       this.transport.hostStartGame();
     });
 
-    // 참가자(Guest) 전용: 준비 완료 토글 버튼
     $('guestReadyBtn')?.addEventListener('click', () => {
       this.audio.unlock();
       const name = this._getEnteredNickname();
@@ -572,10 +629,26 @@ class GameClient {
     });
   }
 
+  /**
+   * [핵심] 스마트폰이 세로(Portrait, innerHeight > innerWidth) 상태일 때도
+   * 무조건 가로(Landscape) 화면 비율로 고정 회전(.force-landscape)시켜 세로 찌그러짐을 원천 차단합니다!
+   */
   _handleResize() {
     const viewport = $('viewport');
-    const rect = viewport.getBoundingClientRect();
-    this.renderer.resize(rect.width, rect.height);
+    if (!viewport) return;
+
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+    const isPortrait = winH > winW;
+
+    viewport.classList.toggle('force-landscape', isPortrait);
+    if (this.input) {
+      this.input.setRotatedPortrait(isPortrait);
+    }
+
+    const logicalW = isPortrait ? winH : winW;
+    const logicalH = isPortrait ? winW : winH;
+    this.renderer.resize(logicalW, logicalH);
   }
 
   _loop(now) {
@@ -593,7 +666,7 @@ class GameClient {
       this.latestSnapshot?.players[0];
     const screenPos = this.renderer.getPlayerScreenPos(localPlayer);
 
-    const inputCmd = this.input.sampleInputCommand(screenPos.x, screenPos.y);
+    const inputCmd = this.input.sampleInputCommand(screenPos.x, screenPos.y, dt);
     this.transport.sendInput(inputCmd);
 
     this.transport.tick(dt);
@@ -641,10 +714,10 @@ class GameClient {
       }
     }
 
-    // 참가자 카드 목록 렌더링
+    // 참가자 카드 목록 렌더링 (문자열 변경 시에만 innerHTML 갱신)
     const playerListEl = $('waitingPlayerList');
     if (playerListEl) {
-      playerListEl.innerHTML = snapshot.players
+      const nextWaitHtml = snapshot.players
         .map((member) => {
           const mSpec = resolveWeaponSpec(member.classId);
           const isMe = member.id === this.localPlayerId;
@@ -675,9 +748,13 @@ class GameClient {
           </div>`;
         })
         .join('');
+
+      if (nextWaitHtml !== this._cachedWaitListHtml) {
+        this._cachedWaitListHtml = nextWaitHtml;
+        playerListEl.innerHTML = nextWaitHtml;
+      }
     }
 
-    // 하단 방장 vs 게스트 컨트롤 토글
     $('hostActionBar')?.classList.toggle('hidden', !isMeHost);
     $('guestActionBar')?.classList.toggle('hidden', isMeHost);
 
@@ -694,7 +771,7 @@ class GameClient {
       }
       const maxBtn = $('maxPlayersToggleBtn');
       if (maxBtn) {
-        maxBtn.textContent = `👥 최대 정원: ${maxPlayers}명`;
+        maxBtn.textContent = `👥 정원: ${maxPlayers}명`;
       }
     } else {
       const hostPlayer = snapshot.players.find((m) => m.id === snapshot.hostId);
@@ -713,7 +790,6 @@ class GameClient {
   _updateHUD(p, snapshot) {
     if (!p) return;
 
-    // 0. 대기실(Waiting Room) 오버레이 업데이트
     this._updateWaitingRoomUI(p, snapshot);
 
     if (p.boxRollSeq && p.boxRollSeq !== this.lastSeenBoxSeq) {
@@ -723,10 +799,10 @@ class GameClient {
 
     const spec = resolveWeaponSpec(p.classId);
     const isMeHost = snapshot.hostId === this.localPlayerId || p.isHost;
-    $('heroTitleText').textContent = `${ isMeHost ? '👑 ' : '' }${spec.icon} ${p.name} · ${spec.name}`;
+    $('heroTitleText').textContent = `${isMeHost ? '👑 ' : ''}${spec.icon} ${p.name} · ${spec.name}`;
     const nickBtn = $('nicknameBtn');
     if (nickBtn) {
-      nickBtn.textContent = `✏️ 닉네임: ${p.name}`;
+      nickBtn.textContent = `✏️ ${p.name}`;
     }
     const tierBadge = $('tierBadgeText');
     if (tierBadge) {
@@ -735,20 +811,19 @@ class GameClient {
       tierBadge.style.borderColor = spec.tierColor || '#ffd32a';
     }
 
-    // 1. 자기장 반경(RING) 및 내 체력(HP) · 탄약(화살/마나/기력) 표시
     const safeR = snapshot.safeRadius ?? WORLD_CONFIG.ARENA_RADIUS;
     const maxR = snapshot.arenaRadius || WORLD_CONFIG.ARENA_RADIUS;
     const ringPct = Math.max(0, Math.min(100, (safeR / maxR) * 100));
     $('baseFill').style.width = `${ringPct}%`;
     if (snapshot.safeDelayLeft && snapshot.safeDelayLeft > 0) {
-      $('baseText').textContent = `${Math.round(safeR)}m (대기 ${snapshot.safeDelayLeft}s)`;
+      $('baseText').textContent = `${Math.round(safeR)}m (${snapshot.safeDelayLeft}s)`;
     } else {
       $('baseText').textContent = `${Math.round(safeR)}m`;
     }
 
     const hpPct = Math.max(0, Math.min(100, (p.hp / p.maxHp) * 100));
     $('hpFill').style.width = `${hpPct}%`;
-    $('hpText').textContent = p.alive ? `${Math.ceil(p.hp)} / ${p.maxHp}` : '💀 ELIMINATED';
+    $('hpText').textContent = p.alive ? `${Math.ceil(p.hp)} / ${p.maxHp}` : '💀 탈락';
 
     const ammoText = $('ammoText');
     const ammoFill = $('ammoFill');
@@ -763,7 +838,7 @@ class GameClient {
 
     if (p.isReloading) {
       const reloadPct = Math.min(100, (p.reloadTimer / (p.reloadDuration || 1.5)) * 100);
-      ammoText.textContent = `${p.reloadLabel} 중... ${Math.floor(reloadPct)}%`;
+      ammoText.textContent = `${p.reloadLabel} ${Math.floor(reloadPct)}%`;
       ammoText.classList.add('reloading');
       ammoFill.style.width = `${reloadPct}%`;
       ammoFill.style.background = '#ffa502';
@@ -776,15 +851,15 @@ class GameClient {
       reloadBtn?.classList.remove('reloading');
 
       if (p.classId === 'archer' || p.classId === 'bow' || p.classId === 'crossbow') {
-        ammoText.textContent = curAmmo > 0 ? '🏹 화살: 1 / 1 (장전 완료)' : '🏹 화살: 장전 필요 (1.5s)';
+        ammoText.textContent = curAmmo > 0 ? '🏹 1 / 1 (장전됨)' : '🏹 장전 필요';
         ammoFill.style.width = curAmmo > 0 ? '100%' : '0%';
         ammoFill.style.background = '#7bed9f';
       } else if (p.classId === 'warrior' || p.classId === 'sword' || spec.isMelee) {
-        ammoText.textContent = `⚔️ STAM: ${curAmmo} / ${p.maxAmmo} (근접 참격)`;
+        ammoText.textContent = `⚔️ ${curAmmo} / ${p.maxAmmo}`;
         ammoFill.style.width = `${Math.min(100, (p.ammo / p.maxAmmo) * 100)}%`;
         ammoFill.style.background = '#ffa502';
       } else {
-        ammoText.textContent = `🔮 MANA: ${curAmmo} / ${p.maxAmmo} (둔화 40% + 화상)`;
+        ammoText.textContent = `🔮 ${curAmmo} / ${p.maxAmmo}`;
         ammoFill.style.width = `${Math.min(100, (p.ammo / p.maxAmmo) * 100)}%`;
         ammoFill.style.background = '#e056fd';
       }
@@ -818,14 +893,14 @@ class GameClient {
     $('waveText').textContent =
       snapshot.roundState === 'waiting'
         ? '대기실'
-        : `ROUND ${String(roundNum).padStart(2, '0')}`;
-    $('aliveText').textContent = `${aliveCount} / ${totalCount}`;
-    $('killText').textContent = `${p.kills || 0}K · ${p.wins || 0}W`;
+        : `R${String(roundNum).padStart(2, '0')}`;
+    $('aliveText').textContent = `${aliveCount}/${totalCount}`;
+    $('killText').textContent = `${p.kills || 0}K·${p.wins || 0}W`;
 
-    // 4. 생존자 로스터 (방장 왕관 및 생존 여부 실시간 표시)
+    // 4. 생존자 로스터 (변경 시에만 DOM 업데이트하여 리플로우 렉 제거!)
     const rosterEl = $('squadRoster');
     if (rosterEl && snapshot.players) {
-      rosterEl.innerHTML = snapshot.players
+      const nextRosterHtml = snapshot.players
         .map((member) => {
           const mSpec = resolveWeaponSpec(member.classId);
           const isMe = member.id === this.localPlayerId;
@@ -840,20 +915,27 @@ class GameClient {
           </div>`;
         })
         .join('');
+
+      if (nextRosterHtml !== this._cachedRosterHtml) {
+        this._cachedRosterHtml = nextRosterHtml;
+        rosterEl.innerHTML = nextRosterHtml;
+      }
     }
 
-    // 5. 실시간 킬피드 배너
+    // 5. 실시간 킬피드 배너 (변경 시에만 DOM 업데이트)
     const killFeedEl = $('killFeedBox');
     if (killFeedEl && snapshot.killFeed) {
-      killFeedEl.innerHTML = snapshot.killFeed
-        .slice(0, 3)
+      const nextKillHtml = snapshot.killFeed
+        .slice(0, 2)
         .map((item) => `<div class="kill-item">⚔️ ${item.text}</div>`)
         .join('');
+      if (nextKillHtml !== this._cachedKillFeedHtml) {
+        this._cachedKillFeedHtml = nextKillHtml;
+        killFeedEl.innerHTML = nextKillHtml;
+      }
     }
 
-    // ========================================================================
-    // 6. [핵심 연출 1] 라운드 시작 랜덤 무기 박스(Random Weapon Box) 모달 제어
-    // ========================================================================
+    // 6. 라운드 시작 랜덤 무기 박스(Random Weapon Box) 모달 제어
     const boxOverlay = $('randomBoxOverlay');
     const isRoulettePhase =
       snapshot.roundState === 'roulette' ||
@@ -907,9 +989,7 @@ class GameClient {
       }
     }
 
-    // ========================================================================
-    // 7. [핵심 연출 2] 최후의 1인(WINNER) 우승자 발표 모달 제어
-    // ========================================================================
+    // 7. 최후의 1인(WINNER) 우승자 발표 모달 제어
     const winOverlay = $('winnerOverlay');
     if (winOverlay) {
       const isRoundOver = snapshot.roundState === 'round_over' && snapshot.winner;

@@ -1,0 +1,9 @@
+{
+  "name": "CIRCLE ROYALE",
+  "short_name": "CircleRoyale",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07090e",
+  "theme_color": "#07090e"
+}

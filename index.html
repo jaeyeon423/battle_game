@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="./manifest.json" />
   <title>CIRCLE ROYALE · 모바일 판타지 멀티플레이 결투</title>
   <link rel="stylesheet" href="./css/style.css" />
 </head>
@@ -75,13 +76,14 @@
         <div class="kill-feed" id="killFeedBox"></div>
       </div>
 
-      <!-- 우측 상단: 멀티플레이 방 목록 / 닉네임 / 대기실 / 사운드 버튼 -->
+      <!-- 우측 상단: 전체화면(주소창 숨김) / 방 목록 / 닉네임 / 대기실 / 사운드 버튼 -->
       <nav class="hud-tools" aria-label="멀티플레이 메뉴 및 설정">
-        <button type="button" class="tool-btn highlight-btn" id="roomChangeBtn">🏠 방 목록 / 방 만들기</button>
-        <button type="button" class="tool-btn" id="nicknameBtn">✏️ 닉네임: HERO-01</button>
-        <button type="button" class="tool-btn" id="rerollBoxBtn">🎲 직업 변경 (B)</button>
-        <button type="button" class="tool-btn" id="newRoundBtn">👑 대기실 / 재시작</button>
-        <button type="button" class="tool-btn" id="soundBtn">🔊 사운드 ON</button>
+        <button type="button" class="tool-btn fullscreen-btn" id="fullscreenBtn" title="전체화면 및 가로 고정">⛶ 전체화면</button>
+        <button type="button" class="tool-btn highlight-btn" id="roomChangeBtn">🏠 방 목록</button>
+        <button type="button" class="tool-btn" id="nicknameBtn">✏️ 닉네임</button>
+        <button type="button" class="tool-btn" id="rerollBoxBtn">🎲 직업변경</button>
+        <button type="button" class="tool-btn" id="newRoundBtn">👑 대기실</button>
+        <button type="button" class="tool-btn" id="soundBtn">🔊 사운드</button>
       </nav>
     </header>
 

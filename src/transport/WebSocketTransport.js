@@ -1,9 +1,11 @@
 // ============================================================================
 // [Transport] 원형 배틀로얄 실시간 온라인 멀티플레이 WebSocket 통신 어댑터
-// - 방 생성(createRoom), 방 입장(joinRoom), 방장 게임 시작(hostStartGame), 대기실/레디/설정 동기화
+// - 해외 리전(US East 등) 핑 지연 대응: 내 캐릭터 클라이언트 이동 예측(Client-Side Prediction)
+// - 투사체(bullets) 60FPS 프레임간 보간(Interpolation)으로 끊김 없는 부드러운 렌더링
 // ============================================================================
 
 import { WorldSimulation } from '../engine/WorldSimulation.js';
+import { WORLD_CONFIG, resolveWeaponSpec } from '../shared/constants.js';
 import { lerp } from '../shared/math.js';
 
 export class WebSocketTransport {
@@ -31,6 +33,7 @@ export class WebSocketTransport {
     this.serverSnapshot = null;
     this.displaySnapshot = null;
     this.lastSendTime = 0;
+    this.latestInputCmd = { moveX: 0, moveY: 0, aimAngle: 0, isFiring: false };
   }
 
   connect(playerName = '', classId = '', roomId = 'ROYALE-01', autoJoin = false) {
@@ -87,7 +90,7 @@ export class WebSocketTransport {
             this.maxPlayers = msg.maxPlayers || msg.snapshot?.maxPlayers || 4;
             if (msg.playerName) this.playerName = msg.playerName;
             this.serverSnapshot = msg.snapshot;
-            this.displaySnapshot = structuredClone(msg.snapshot);
+            this.displaySnapshot = msg.snapshot;
 
             if (Array.isArray(msg.rooms)) {
               this.roomListCallback?.(msg.rooms);
@@ -168,9 +171,24 @@ export class WebSocketTransport {
 
       for (const p of incoming.players) {
         const old = prevPlayers.get(p.id);
-        if (old && Math.hypot(p.x - old.x, p.y - old.y) < 120) {
-          p._renderX = old.x;
-          p._renderY = old.y;
+        if (old) {
+          const oldRx = typeof old._renderX === 'number' ? old._renderX : old.x;
+          const oldRy = typeof old._renderY === 'number' ? old._renderY : old.y;
+          const dist = Math.hypot(p.x - oldRx, p.y - oldRy);
+          // 순간이동(점멸/도약/라운드 스폰)이 아닌 일반 이동 범위 내에서는 이전 렌더링 위치를 보존하여 부드럽게 보간
+          if (dist < 160) {
+            p._renderX = oldRx;
+            p._renderY = oldRy;
+          } else {
+            p._renderX = p.x;
+            p._renderY = p.y;
+          }
+          if (p.id === this.localPlayerId && this.latestInputCmd) {
+            p.aimAngle = this.latestInputCmd.aimAngle;
+          }
+        } else {
+          p._renderX = p.x;
+          p._renderY = p.y;
         }
       }
 
@@ -270,7 +288,6 @@ export class WebSocketTransport {
     if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'list_rooms' }));
     }
-    // HTTP fallback 병행
     if (typeof window !== 'undefined' && window.fetch) {
       fetch('/api/rooms')
         .then((r) => r.json())
@@ -361,13 +378,14 @@ export class WebSocketTransport {
   }
 
   sendInput(inputCmd) {
+    this.latestInputCmd = inputCmd;
     if (this.isOnline && this.ws && this.ws.readyState === WebSocket.OPEN) {
       const now = performance.now();
       const hasTrigger =
         inputCmd.reloadPressed ||
         inputCmd.skill1Pressed ||
         inputCmd.skill2Pressed;
-      if (hasTrigger || now - this.lastSendTime >= 22) {
+      if (hasTrigger || now - this.lastSendTime >= 30) {
         this.lastSendTime = now;
         this.ws.send(JSON.stringify({ type: 'input', cmd: inputCmd }));
       }
@@ -390,11 +408,62 @@ export class WebSocketTransport {
 
   tick(dt) {
     if (this.isOnline && this.displaySnapshot) {
-      const factor = Math.min(1, dt * 18);
+      const canMove =
+        this.displaySnapshot.roundState === 'combat' ||
+        this.displaySnapshot.roundState === 'waiting';
+
       for (const p of this.displaySnapshot.players) {
-        if (typeof p._renderX === 'number') {
+        if (typeof p._renderX !== 'number') p._renderX = p.x;
+        if (typeof p._renderY !== 'number') p._renderY = p.y;
+
+        if (p.id === this.localPlayerId && p.alive && canMove) {
+          // [핵심] 내 캐릭터 클라이언트 측 즉시 이동 예측(Client-Side Prediction): 해외 서버 핑에서도 조이스틱 딜레이 0ms!
+          const spec = resolveWeaponSpec(p.classId);
+          const cmd = this.latestInputCmd || { moveX: 0, moveY: 0, aimAngle: p.aimAngle };
+          p.aimAngle = cmd.aimAngle;
+
+          let mx = cmd.moveX || 0;
+          let my = cmd.moveY || 0;
+          const len = Math.hypot(mx, my);
+          if (len > 1) {
+            mx /= len;
+            my /= len;
+          }
+          const spd = (p.speed || spec.speed || 225) * (p.slowTimer > 0 ? 0.6 : 1.0);
+          p._renderX += mx * spd * dt;
+          p._renderY += my * spd * dt;
+
+          // 원형 경기장 경계 클램핑
+          const cx = WORLD_CONFIG.CENTER_X;
+          const cy = WORLD_CONFIG.CENTER_Y;
+          const maxR = WORLD_CONFIG.ARENA_RADIUS - 18;
+          const distFromCenter = Math.hypot(p._renderX - cx, p._renderY - cy);
+          if (distFromCenter > maxR) {
+            const ang = Math.atan2(p._renderY - cy, p._renderX - cx);
+            p._renderX = cx + Math.cos(ang) * maxR;
+            p._renderY = cy + Math.sin(ang) * maxR;
+          }
+
+          // 서버 권위 위치(p.x, p.y)로 부드럽게 수렴 보정 (Reconciliation)
+          const reconcile = Math.min(1, dt * 10);
+          p._renderX = lerp(p._renderX, p.x, reconcile);
+          p._renderY = lerp(p._renderY, p.y, reconcile);
+        } else {
+          // 타 플레이어 및 AI 봇 위치 60fps 보간
+          const factor = Math.min(1, dt * 18);
           p._renderX = lerp(p._renderX, p.x, factor);
           p._renderY = lerp(p._renderY, p.y, factor);
+        }
+      }
+
+      // 투사체(화살/마법탄)도 30Hz 패킷 사이에서 60fps로 매끄럽게 전진 보간!
+      if (this.displaySnapshot.bullets) {
+        for (let i = 0; i < this.displaySnapshot.bullets.length; i++) {
+          const b = this.displaySnapshot.bullets[i];
+          if (typeof b.vx === 'number' && typeof b.vy === 'number') {
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+          }
         }
       }
       return;

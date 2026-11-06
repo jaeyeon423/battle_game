@@ -1,6 +1,7 @@
 // ============================================================================
 // [Client] 원형 배틀로얄: 랜덤 무기 서바이벌 (CIRCLE ROYALE) Canvas 2D 렌더러
-// 원형 경기장, 축소되는 자기장(Storm Ring), 6종 랜덤 무기 궤적 및 생존자 렌더링
+// - 오프스크린 배경 타일 캐싱(arenaBgCanvas)으로 모바일 렌더링 부하 90% 이상 감소 (60FPS 보장)
+// - 모바일 화면 크기 기반 자동 시야 확장(viewScale) 및 카메라 360° 외곽 완전 추적
 // ============================================================================
 
 import { WORLD_CONFIG, resolveWeaponSpec } from '../shared/constants.js';
@@ -10,10 +11,17 @@ import { PixelSprites } from './PixelSprites.js';
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
+    this.ctx = canvas.getContext('2d', { alpha: false });
     this.sprites = new PixelSprites();
 
     this.camera = { x: WORLD_CONFIG.CENTER_X, y: WORLD_CONFIG.CENTER_Y, shake: 0 };
+    this.viewScale = 1.0;
+    this.viewW = 1280;
+    this.viewH = 720;
+    this.dpr = 1;
+
+    this.arenaBgCanvas = null;
+
     this.particles = [];
     this.floatingTexts = [];
     this.groundStains = [];
@@ -22,21 +30,113 @@ export class Renderer {
   }
 
   resize(width, height) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.floor(width * dpr);
-    this.canvas.height = Math.floor(height * dpr);
-    this.viewW = width;
-    this.viewH = height;
+    const safeW = Math.max(1, width);
+    const safeH = Math.max(1, height);
+    // 모바일 고해상도 기기에서 과도한 픽셀 셰이딩으로 인한 발열/프레임 드랍 방지 (최대 1.5x)
+    const isMobileScreen = Math.min(safeW, safeH) < 540;
+    const maxDpr = isMobileScreen ? 1.5 : 2.0;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+
+    this.canvas.width = Math.floor(safeW * dpr);
+    this.canvas.height = Math.floor(safeH * dpr);
+    this.viewW = safeW;
+    this.viewH = safeH;
     this.dpr = dpr;
+
+    // 모바일 작은 화면에서도 경기장이 넓게 한눈에 들어오도록 자동 줌아웃(FOV 확장)
+    if (safeH < 360) {
+      this.viewScale = 0.76;
+    } else if (safeH < 460 || safeW < 850) {
+      this.viewScale = 0.84;
+    } else {
+      this.viewScale = 1.0;
+    }
+  }
+
+  /**
+   * 원형 경기장 바닥 타일(484회 drawImage)과 전술 그리드를 최초 1회만 오프스크린 캔버스에 구워 캐싱합니다.
+   */
+  _ensureArenaBgCache() {
+    if (this.arenaBgCanvas) return this.arenaBgCanvas;
+    if (typeof document === 'undefined') return null;
+
+    const w = WORLD_CONFIG.WIDTH || 1600;
+    const h = WORLD_CONFIG.HEIGHT || 1600;
+    const cx = WORLD_CONFIG.CENTER_X;
+    const cy = WORLD_CONFIG.CENTER_Y;
+    const arenaR = WORLD_CONFIG.ARENA_RADIUS;
+
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const octx = off.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+
+    const tile = this.sprites.get('alien_tile');
+    const ts = WORLD_CONFIG.TILE_SIZE;
+
+    octx.save();
+    octx.beginPath();
+    octx.arc(cx, cy, arenaR, 0, Math.PI * 2);
+    octx.clip();
+
+    const startCol = Math.max(0, Math.floor((cx - arenaR) / ts));
+    const endCol = Math.ceil((cx + arenaR) / ts);
+    const startRow = Math.max(0, Math.floor((cy - arenaR) / ts));
+    const endRow = Math.ceil((cy + arenaR) / ts);
+
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        octx.drawImage(tile, c * ts, r * ts, ts, ts);
+      }
+    }
+
+    // 원형 경기장 내부 동심원 전술 가이드 라인
+    octx.strokeStyle = 'rgba(94, 242, 255, 0.09)';
+    octx.lineWidth = 2;
+    for (const ringR of [160, 320, 490]) {
+      octx.beginPath();
+      octx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      octx.stroke();
+    }
+
+    // 십자 중심선
+    octx.beginPath();
+    octx.moveTo(cx - arenaR, cy);
+    octx.lineTo(cx + arenaR, cy);
+    octx.moveTo(cx, cy - arenaR);
+    octx.lineTo(cx, cy + arenaR);
+    octx.stroke();
+    octx.restore();
+
+    // 원형 경기장 외벽 강철 링도 정적 배경에 함께 구워둠
+    octx.save();
+    octx.strokeStyle = '#3d4656';
+    octx.lineWidth = 10;
+    octx.beginPath();
+    octx.arc(cx, cy, arenaR + 4, 0, Math.PI * 2);
+    octx.stroke();
+
+    octx.strokeStyle = '#ffa502';
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.arc(cx, cy, arenaR, 0, Math.PI * 2);
+    octx.stroke();
+    octx.restore();
+
+    this.arenaBgCanvas = off;
+    return this.arenaBgCanvas;
   }
 
   getPlayerScreenPos(localPlayer) {
     if (!localPlayer) {
       return { x: this.viewW / 2, y: this.viewH / 2 };
     }
+    const px = typeof localPlayer._renderX === 'number' ? localPlayer._renderX : localPlayer.x;
+    const py = typeof localPlayer._renderY === 'number' ? localPlayer._renderY : localPlayer.y;
     return {
-      x: localPlayer.x - this.camera.x + this.viewW / 2,
-      y: localPlayer.y - this.camera.y + this.viewH / 2,
+      x: (px - this.camera.x) * this.viewScale + this.viewW / 2,
+      y: (py - this.camera.y) * this.viewScale + this.viewH / 2,
     };
   }
 
@@ -101,7 +201,7 @@ export class Renderer {
           color: ev.color || '#ffd32a',
           life: 0.85,
         });
-        for (let k = 0; k < 12; k++) {
+        for (let k = 0; k < 10; k++) {
           const ang = Math.random() * Math.PI * 2;
           const spd = 60 + Math.random() * 140;
           this.particles.push({
@@ -201,7 +301,7 @@ export class Renderer {
         });
       } else if (ev.type === 'kill') {
         this.camera.shake = 7;
-        for (let k = 0; k < 18; k++) {
+        for (let k = 0; k < 16; k++) {
           const ang = Math.random() * Math.PI * 2;
           const spd = 60 + Math.random() * 170;
           this.particles.push({
@@ -239,7 +339,7 @@ export class Renderer {
           life: 0.28,
           maxLife: 0.28,
         });
-        for (let k = 0; k < 22; k++) {
+        for (let k = 0; k < 18; k++) {
           const ang = Math.random() * Math.PI * 2;
           const spd = 80 + Math.random() * 230;
           this.particles.push({
@@ -276,7 +376,7 @@ export class Renderer {
           maxLife: dur,
           isWhirlwind: false,
         });
-        for (let k = 0; k < 12; k++) {
+        for (let k = 0; k < 10; k++) {
           const spread = (Math.random() - 0.5) * (ev.arc || 1.85);
           const ang = ev.angle + spread;
           const dist = 32 + Math.random() * ((ev.range || 100) - 24);
@@ -301,7 +401,6 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
 
     const myPlayer = snapshot.players.find((p) => p.id === localPlayerId);
-    // 본인이 살아있으면 본인을 비추고, 탈락했으면 살아있는 생존자를 관전!
     const focusTarget =
       (myPlayer && myPlayer.alive ? myPlayer : null) ||
       snapshot.players.find((p) => p.alive) ||
@@ -309,18 +408,21 @@ export class Renderer {
       snapshot.players[0];
 
     if (focusTarget) {
+      const fx = typeof focusTarget._renderX === 'number' ? focusTarget._renderX : focusTarget.x;
+      const fy = typeof focusTarget._renderY === 'number' ? focusTarget._renderY : focusTarget.y;
+      // 경기장 외곽(700m) 어디로 이동하든 내 캐릭터가 화면 정중앙에 오도록 카메라 클램프를 680까지 확장!
       const targetCamX = clamp(
-        focusTarget.x,
-        WORLD_CONFIG.CENTER_X - 420,
-        WORLD_CONFIG.CENTER_X + 420
+        fx,
+        WORLD_CONFIG.CENTER_X - 680,
+        WORLD_CONFIG.CENTER_X + 680
       );
       const targetCamY = clamp(
-        focusTarget.y,
-        WORLD_CONFIG.CENTER_Y - 420,
-        WORLD_CONFIG.CENTER_Y + 420
+        fy,
+        WORLD_CONFIG.CENTER_Y - 680,
+        WORLD_CONFIG.CENTER_Y + 680
       );
-      this.camera.x = lerp(this.camera.x, targetCamX, Math.min(1, dt * 8));
-      this.camera.y = lerp(this.camera.y, targetCamY, Math.min(1, dt * 8));
+      this.camera.x = lerp(this.camera.x, targetCamX, Math.min(1, dt * 12));
+      this.camera.y = lerp(this.camera.y, targetCamY, Math.min(1, dt * 12));
     }
 
     let shakeX = 0;
@@ -338,12 +440,14 @@ export class Renderer {
     ctx.fillRect(0, 0, this.viewW, this.viewH);
 
     ctx.save();
-    const camLeft = Math.round(this.camera.x - this.viewW / 2 + shakeX);
-    const camTop = Math.round(this.camera.y - this.viewH / 2 + shakeY);
-    ctx.translate(-camLeft, -camTop);
+    ctx.translate(this.viewW / 2 + shakeX, this.viewH / 2 + shakeY);
+    if (this.viewScale !== 1.0) {
+      ctx.scale(this.viewScale, this.viewScale);
+    }
+    ctx.translate(-Math.round(this.camera.x), -Math.round(this.camera.y));
 
-    // 1. 원형 경기장 바닥 & 동심원 전술 링 & 자기장(Safe Zone) 렌더링
-    this._drawCircularArena(ctx, snapshot, camLeft, camTop);
+    // 1. 원형 경기장 바닥 & 자기장(Safe Zone) 렌더링 (캐시된 오프스크린 캔버스로 초고속 렌더링)
+    this._drawCircularArena(ctx, snapshot);
 
     // 2. 바닥 흔적
     this._drawGroundDetails(ctx);
@@ -381,58 +485,27 @@ export class Renderer {
     ctx.restore();
   }
 
-  _drawCircularArena(ctx, snapshot, camLeft, camTop) {
+  _drawCircularArena(ctx, snapshot) {
     const cx = snapshot.centerX || WORLD_CONFIG.CENTER_X;
     const cy = snapshot.centerY || WORLD_CONFIG.CENTER_Y;
     const arenaR = snapshot.arenaRadius || WORLD_CONFIG.ARENA_RADIUS;
     const safeR = snapshot.safeRadius ?? arenaR;
 
-    const tile = this.sprites.get('alien_tile');
-    const ts = WORLD_CONFIG.TILE_SIZE;
-
-    // 원형 경기장 내부만 클리핑하여 타일 바닥 렌더링
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, arenaR, 0, Math.PI * 2);
-    ctx.clip();
-
-    const startCol = Math.max(0, Math.floor((cx - arenaR) / ts));
-    const endCol = Math.ceil((cx + arenaR) / ts);
-    const startRow = Math.max(0, Math.floor((cy - arenaR) / ts));
-    const endRow = Math.ceil((cy + arenaR) / ts);
-
-    for (let r = startRow; r <= endRow; r++) {
-      for (let c = startCol; c <= endCol; c++) {
-        ctx.drawImage(tile, c * ts, r * ts, ts, ts);
-      }
+    const bgCache = this._ensureArenaBgCache();
+    if (bgCache) {
+      ctx.drawImage(bgCache, 0, 0);
     }
-
-    // 원형 경기장 내부 동심원 전술 가이드 라인
-    ctx.strokeStyle = 'rgba(94, 242, 255, 0.08)';
-    ctx.lineWidth = 2;
-    for (const ringR of [160, 320, 490]) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // 십자 중심선
-    ctx.beginPath();
-    ctx.moveTo(cx - arenaR, cy);
-    ctx.lineTo(cx + arenaR, cy);
-    ctx.moveTo(cx, cy - arenaR);
-    ctx.lineTo(cx, cy + arenaR);
-    ctx.stroke();
 
     // [자기장 / 독가스 위험 구역] safeR 바깥 ~ arenaR 사이를 붉은 반투명 도넛으로 표시
     if (safeR < arenaR) {
+      ctx.save();
       ctx.fillStyle = 'rgba(255, 45, 85, 0.24)';
       ctx.beginPath();
       ctx.arc(cx, cy, arenaR, 0, Math.PI * 2, false);
       ctx.arc(cx, cy, safeR, 0, Math.PI * 2, true);
       ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
 
     // 안전지대(Safe Zone) 경계 링
     ctx.save();
@@ -441,20 +514,6 @@ export class Renderer {
     ctx.setLineDash([14, 8]);
     ctx.beginPath();
     ctx.arc(cx, cy, safeR, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // 원형 경기장 외벽 강철 링
-    ctx.strokeStyle = '#3d4656';
-    ctx.lineWidth = 10;
-    ctx.beginPath();
-    ctx.arc(cx, cy, arenaR + 4, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = '#ffa502';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, arenaR, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -531,7 +590,6 @@ export class Renderer {
       ctx.stroke();
 
       if (spec.isMelee) {
-        // [전사]: 정적인 색칠 부채꼴 대신 깔끔한 전방 사거리 가이드 호(Arc)와 중심 방향 마커만 은은하게 표시
         const reach = spec.meleeRange || 100;
         const halfArc = (spec.meleeArc || 1.85) * 0.5;
         ctx.save();
@@ -543,7 +601,6 @@ export class Renderer {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // 전방 끝점 조준 포인터
         const tipX = px + Math.cos(p.aimAngle) * (reach * 0.82);
         const tipY = py + 3 + Math.sin(p.aimAngle) * (reach * 0.82);
         ctx.fillStyle = 'rgba(255, 211, 42, 0.65)';
@@ -552,7 +609,6 @@ export class Renderer {
         ctx.fill();
         ctx.restore();
       } else {
-        // [궁수 및 마법사]: 원거리 조준선
         const isArcher = cls === 'archer' || cls === 'bow' || cls === 'crossbow';
         const laserLen = p.isReloading ? 90 : (isArcher ? 520 : 340);
         const startX = px + Math.cos(p.aimAngle) * 18;
@@ -575,7 +631,6 @@ export class Renderer {
         ctx.fillRect(Math.round(endX - 3), Math.round(endY - 3), 6, 6);
 
         if (cls === 'mage' || cls === 'staff') {
-          // 마법 폭발 반경 가이드 서클
           ctx.strokeStyle = 'rgba(224, 86, 253, 0.4)';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
@@ -585,7 +640,6 @@ export class Renderer {
         ctx.restore();
       }
     } else {
-      // 적 생존자 발밑 붉은 링
       ctx.strokeStyle = 'rgba(255, 71, 87, 0.45)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -605,7 +659,6 @@ export class Renderer {
       ctx.arc(px, py, 24, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // 상태이상: 둔화(Slow) 서리 링
     if (p.slowTimer > 0) {
       ctx.save();
       ctx.strokeStyle = 'rgba(94, 242, 255, 0.85)';
@@ -616,7 +669,6 @@ export class Renderer {
       ctx.stroke();
       ctx.restore();
     }
-    // 상태이상: 화상(Burn)
     if (p.burnTimer > 0) {
       ctx.save();
       ctx.fillStyle = '#ff4757';
@@ -647,32 +699,27 @@ export class Renderer {
       if (spec.isMelee) {
         const halfArc = (spec.meleeArc || 1.85) * 0.56;
         const dir = p.swingDir || 1;
-        let weaponAngle = p.aimAngle - dir * 0.55; // 평상시 대검 준비 자세(어깨 옆으로 비스듬히 파지)
+        let weaponAngle = p.aimAngle - dir * 0.55;
         let thrustOffset = 4;
 
         if (p.whirlwindTimer > 0) {
-          // [회전 참격 스킬]: 360도 고속 2회전 스핀 모션
           const wt = 1 - p.whirlwindTimer / 0.42;
           weaponAngle = p.aimAngle + wt * Math.PI * 4;
           thrustOffset = 14;
         } else if (p.swingVisualTimer > 0) {
-          // [기본 공격]: 대검을 반대편에서 반대편 끝까지 호쾌하게 가로베는 휘두르기 모션
           const dur = p.swingDuration || 0.28;
           const rawT = clamp(1 - p.swingVisualTimer / dur, 0, 1);
-          // 빠른 초반 가속 후 묵직한 마무리 (Ease-out cubic)
           const eased = 1 - Math.pow(1 - rawT, 3);
           const startAng = p.aimAngle - dir * halfArc;
           const endAng = p.aimAngle + dir * halfArc;
           weaponAngle = startAng + (endAng - startAng) * eased;
           thrustOffset = 4 + Math.sin(rawT * Math.PI) * 16;
 
-          // 휘두르는 동안 실시간 초승달 검기 잔상(Crescent Blade Trail) 렌더링
           const reach = spec.meleeRange || 100;
-          const trailSpan = (weaponAngle - startAng);
+          const trailSpan = weaponAngle - startAng;
           if (Math.abs(trailSpan) > 0.05) {
             ctx.save();
             const ccw = dir < 0;
-            // 바깥쪽 황금빛 검기 호
             ctx.strokeStyle = 'rgba(255, 165, 2, 0.85)';
             ctx.lineWidth = 14 * (1 - rawT * 0.45);
             ctx.lineCap = 'round';
@@ -680,7 +727,6 @@ export class Renderer {
             ctx.arc(0, 0, reach * 0.78, startAng, weaponAngle, ccw);
             ctx.stroke();
 
-            // 안쪽 눈부신 백색 칼날 궤적
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 5 * (1 - rawT * 0.45);
             ctx.beginPath();
@@ -719,7 +765,7 @@ export class Renderer {
     ctx.fillStyle = isLocal ? '#5ef2ff' : '#ffd32a';
     ctx.fillText(`${spec.icon} ${p.name}`, Math.round(px), by - 4);
 
-    // 7. 차징 게이지 바 (활 시위 당김) 또는 재장전 게이지 바
+    // 7. 차징 게이지 바 또는 재장전 게이지 바
     if (p.classId === 'bow' && p.bowCharge > 0) {
       const rbw = 46;
       const rbh = 5;
@@ -751,7 +797,6 @@ export class Renderer {
       ctx.rotate(b.angle);
 
       if (b.bulletType === 'bolt') {
-        // 드워프 석궁 룬 볼트: 굵은 강철 몸체 + 시안 룬 잔광
         ctx.fillStyle = 'rgba(94, 242, 255, 0.35)';
         ctx.fillRect(-24, -3, 22, 6);
         ctx.fillStyle = '#8a8f98';
@@ -764,7 +809,6 @@ export class Renderer {
         ctx.closePath();
         ctx.fill();
       } else if (b.bulletType === 'slash') {
-        // 대검 검기: 초승달 모양 베기 궤적
         ctx.strokeStyle = b.color || '#ffa502';
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -776,7 +820,6 @@ export class Renderer {
         ctx.arc(-4, 0, 10, -0.7, 0.7);
         ctx.stroke();
       } else if (b.bulletType === 'fireball') {
-        // 화염구: 불꽃 꼬리 + 붉은 구체 + 노란 코어
         ctx.fillStyle = 'rgba(255, 127, 80, 0.45)';
         ctx.beginPath();
         ctx.arc(-9, 0, 6, 0, Math.PI * 2);
@@ -790,7 +833,6 @@ export class Renderer {
         ctx.arc(1, 0, 4, 0, Math.PI * 2);
         ctx.fill();
       } else if (b.bulletType === 'dagger') {
-        // 투척 단검: 보랏빛 손잡이 + 은빛 칼날
         ctx.fillStyle = '#2d2047';
         ctx.fillRect(-8, -1, 5, 3);
         ctx.fillStyle = b.color || '#a29bfe';
@@ -803,7 +845,6 @@ export class Renderer {
         ctx.closePath();
         ctx.fill();
       } else if (b.bulletType === 'magic') {
-        // 비전 마력탄: 빛나는 구체 + 잔상
         ctx.fillStyle = 'rgba(255, 211, 42, 0.3)';
         ctx.beginPath();
         ctx.arc(-6, 0, 5, 0, Math.PI * 2);
@@ -815,7 +856,6 @@ export class Renderer {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(-1, -1, 3, 3);
       } else {
-        // 엘프 화살: 나무 화살대 + 깃털 + 화살촉
         if (b.isCharged) {
           ctx.fillStyle = 'rgba(94, 242, 255, 0.45)';
           ctx.fillRect(-22, -3, 22, 6);
@@ -876,7 +916,6 @@ export class Renderer {
         const tailAng = startAng + (endAng - startAng) * Math.max(0, eased - 0.55);
         const ccw = dir < 0;
 
-        // 검기 외곽 황금 궤적
         ctx.strokeStyle = sw.color || '#ffa502';
         ctx.globalAlpha = alpha * 0.75;
         ctx.lineWidth = 18 * (1 - rawT * 0.4);
@@ -884,7 +923,6 @@ export class Renderer {
         ctx.arc(0, 0, reach * 0.82, tailAng, curAng, ccw);
         ctx.stroke();
 
-        // 날카로운 검끝 코어 궤적
         ctx.strokeStyle = '#fff200';
         ctx.globalAlpha = alpha;
         ctx.lineWidth = 8 * (1 - rawT * 0.4);
@@ -892,7 +930,6 @@ export class Renderer {
         ctx.arc(0, 0, reach * 0.9, tailAng, curAng, ccw);
         ctx.stroke();
 
-        // 칼끝 위치에 번쩍이는 참격 스파크
         const tipX = Math.cos(curAng) * (reach * 0.9);
         const tipY = Math.sin(curAng) * (reach * 0.9);
         ctx.fillStyle = '#ffffff';

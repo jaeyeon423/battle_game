@@ -40,10 +40,22 @@ body {
 
 #viewport {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100dvw;
+  height: 100dvh;
   overflow: hidden;
   background: #07090e;
+}
+
+/* 스마트폰이 세로(Portrait)일 때 자동으로 90도 회전시켜 언제나 가로 화면으로 고정 */
+#viewport.force-landscape {
+  position: fixed;
+  top: 0;
+  left: 100vw;
+  width: 100dvh;
+  height: 100dvw;
+  transform-origin: top left;
+  transform: rotate(90deg);
+  z-index: 1;
 }
 
 #arenaCanvas {
@@ -261,10 +273,10 @@ body {
 
 /* 우측 상단 도구 버튼 */
 .hud-tools {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: end;
+  gap: 4px;
   pointer-events: auto;
 }
 
@@ -1339,105 +1351,167 @@ body {
 }
 
 /* ============================================================================
- * 모바일 가로/세로 뷰포트 반응형 레이아웃 최적화
+ * 모바일 가로 뷰포트 & 세로 강제 가로 회전(.force-landscape) 초슬림 레이아웃 최적화
  * ============================================================================ */
 
-@media (max-width: 920px), (max-height: 520px) {
+.fullscreen-btn {
+  background: rgba(94, 242, 255, 0.18);
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+@media (max-width: 960px), (max-height: 540px) {
   .bottom-guide {
     display: none;
   }
 
   .hud-top {
-    top: 6px;
-    left: 8px;
-    right: 8px;
-    gap: 6px;
+    top: 4px;
+    left: 6px;
+    right: 6px;
+    gap: 4px;
   }
 
   .hud-card {
-    padding: 5px 8px;
+    padding: 4px 7px;
   }
 
   .soldier-status {
-    min-width: 185px;
-    gap: 3px;
+    min-width: 158px;
+    max-width: 205px;
+    gap: 2px;
   }
 
   .status-header {
-    font-size: 11px;
+    font-size: 10px;
+  }
+
+  .lv-badge {
+    font-size: 9px;
+    padding: 0 4px;
+  }
+
+  .bar-row {
+    gap: 5px;
+  }
+
+  .bar-label {
+    font-size: 9px;
+    width: 30px;
+  }
+
+  .bar-track {
+    height: 6px;
   }
 
   .bar-value {
-    font-size: 10px;
-    min-width: 58px;
+    font-size: 9px;
+    min-width: 48px;
+  }
+
+  .squad-roster {
+    margin-top: 2px;
+    padding-top: 3px;
+    font-size: 9px;
+    gap: 1px;
+    max-height: 36px;
+    overflow: hidden;
   }
 
   .mission-center {
-    gap: 10px;
+    gap: 8px;
+    padding: 4px 8px;
   }
 
-  .metric-val {
-    font-size: 12px;
+  .metric-label {
+    font-size: 8px;
   }
 
+  .metric-val,
+  .metric-val.online-badge,
   .metric-val.alive-count {
-    font-size: 13px;
+    font-size: 11px;
+  }
+
+  .hud-tools {
+    grid-template-columns: repeat(3, auto);
+    gap: 3px;
   }
 
   .tool-btn {
     font-size: 10px;
-    padding: 5px 8px;
+    padding: 4px 6px;
+    white-space: nowrap;
   }
 
   .stick-zone {
-    bottom: 16px;
-    width: 116px;
-    height: 116px;
+    bottom: 10px;
+    width: 102px;
+    height: 102px;
+  }
+
+  .stick-knob {
+    width: 44px;
+    height: 44px;
+    font-size: 9px;
+  }
+
+  .stick-caption {
+    display: none;
   }
 
   .left-stick {
-    left: 18px;
+    left: 14px;
   }
 
   .right-stick {
-    right: 18px;
+    right: 14px;
   }
 
   .action-btn {
-    width: 56px;
-    height: 56px;
+    width: 50px;
+    height: 50px;
+  }
+
+  .action-btn .btn-icon {
+    font-size: 13px;
+  }
+
+  .action-btn .btn-name,
+  .action-btn .btn-key {
+    font-size: 8px;
   }
 
   .reload-btn {
-    right: 152px;
-    bottom: 14px;
+    right: 130px;
+    bottom: 10px;
   }
 
   .skill1-btn {
-    right: 140px;
-    bottom: 80px;
+    right: 120px;
+    bottom: 68px;
   }
 
   .skill2-btn {
-    right: 82px;
-    bottom: 140px;
+    right: 68px;
+    bottom: 118px;
   }
 
   .waiting-room-modal,
   .room-browser-modal {
-    padding: 10px 12px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 6px;
+    max-height: 94%;
+  }
+
+  .auth-modal,
+  .create-room-modal {
+    max-height: 94%;
+    padding: 10px 14px;
   }
 
   .wait-player-list,
   .rb-room-list {
-    max-height: 130px;
-  }
-}
-
-@media (max-width: 680px) {
-  .wait-body-grid,
-  .rb-body-grid {
-    grid-template-columns: 1fr;
+    max-height: 110px;
   }
 }
