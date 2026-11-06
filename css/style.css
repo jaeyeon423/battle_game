@@ -40,22 +40,15 @@ body {
 
 #viewport {
   position: relative;
+  width: 100vw;
   width: 100dvw;
+  height: 100vh;
   height: 100dvh;
+  max-width: 540px;
+  margin: 0 auto;
   overflow: hidden;
   background: #07090e;
-}
-
-/* 스마트폰이 세로(Portrait)일 때 자동으로 90도 회전시켜 언제나 가로 화면으로 고정 */
-#viewport.force-landscape {
-  position: fixed;
-  top: 0;
-  left: 100vw;
-  width: 100dvh;
-  height: 100dvw;
-  transform-origin: top left;
-  transform: rotate(90deg);
-  z-index: 1;
+  box-shadow: 0 0 32px rgba(0, 0, 0, 0.7);
 }
 
 #arenaCanvas {
@@ -68,18 +61,20 @@ body {
 }
 
 /* ============================================================================
- * 상단 HUD
+ * 상단 HUD (세로 Portrait 최적화 2열 + 도구 바 그리드)
  * ============================================================================ */
 
 .hud-top {
   position: absolute;
-  top: 10px;
-  left: 14px;
-  right: 14px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  display: grid;
+  grid-template-columns: 1.16fr 0.84fr;
+  grid-template-areas:
+    "status center"
+    "tools  tools";
+  gap: 4px;
   pointer-events: none;
   z-index: 10;
 }
@@ -87,28 +82,32 @@ body {
 .hud-card {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  padding: 8px 12px;
+  padding: 4px 6px;
   backdrop-filter: blur(4px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
 }
 
 .soldier-status {
-  min-width: 256px;
+  grid-area: status;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 2px;
 }
 
 .status-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
 }
 
 .callsign {
   color: var(--gold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lv-badge {
@@ -116,28 +115,28 @@ body {
   background: rgba(255, 211, 42, 0.16);
   border: 1px solid var(--gold);
   color: var(--gold);
-  padding: 1px 6px;
-  font-size: 10px;
+  padding: 0 4px;
+  font-size: 9px;
   font-weight: 800;
 }
 
 .bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .bar-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 8.5px;
   font-weight: 700;
-  width: 38px;
+  width: 26px;
   color: var(--text-dim);
 }
 
 .bar-track {
   flex: 1;
-  height: 8px;
+  height: 6px;
   background: #141923;
   border: 1px solid #2b3648;
   position: relative;
@@ -167,10 +166,11 @@ body {
 
 .bar-value {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 8.5px;
   font-weight: 700;
-  min-width: 72px;
+  min-width: 46px;
   text-align: right;
+  white-space: nowrap;
 }
 
 .bar-value.reloading {
@@ -178,17 +178,20 @@ body {
 }
 
 .center-stack {
+  grid-area: center;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  gap: 3px;
 }
 
 .mission-center {
-  display: flex;
-  align-items: center;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 4px;
   font-family: var(--mono);
+  padding: 4px 6px;
+  text-align: center;
 }
 
 .metric {
@@ -198,20 +201,21 @@ body {
 }
 
 .metric-label {
-  font-size: 9px;
+  font-size: 8px;
   color: var(--text-dim);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
 }
 
 .metric-val {
-  font-size: 15px;
+  font-size: 11px;
   font-weight: 800;
   color: var(--text-main);
+  white-space: nowrap;
 }
 
 .metric-val.online-badge {
   color: var(--cyan);
-  font-size: 13px;
+  font-size: 10px;
 }
 
 .metric-val.wave {
@@ -220,7 +224,7 @@ body {
 
 .metric-val.alive-count {
   color: #ff6b81;
-  font-size: 16px;
+  font-size: 11px;
 }
 
 .metric-val.kills {
@@ -228,14 +232,16 @@ body {
 }
 
 .squad-roster {
-  margin-top: 4px;
-  padding-top: 5px;
+  margin-top: 1px;
+  padding-top: 2px;
   border-top: 1px dashed rgba(255, 255, 255, 0.14);
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 1px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 8.5px;
+  max-height: 28px;
+  overflow: hidden;
 }
 
 .squad-member {
@@ -259,24 +265,27 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 9.5px;
 }
 
 .kill-item {
-  background: rgba(14, 18, 26, 0.82);
+  background: rgba(14, 18, 26, 0.88);
   border: 1px solid rgba(255, 71, 87, 0.45);
   color: #ffd32a;
-  padding: 2px 10px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  border-radius: 3px;
 }
 
 /* 우측 상단 도구 버튼 */
 .hud-tools {
-  display: grid;
-  grid-template-columns: repeat(3, auto);
-  justify-content: end;
-  gap: 4px;
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
   pointer-events: auto;
 }
 
@@ -285,20 +294,29 @@ body {
   border: 1px solid var(--panel-border);
   color: var(--text-main);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 700;
-  padding: 6px 10px;
+  padding: 3px 5px;
+  border-radius: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  flex: 1;
+  text-align: center;
 }
 
 .tool-btn.highlight-btn {
   background: rgba(255, 211, 42, 0.2);
   border-color: var(--gold);
   color: var(--gold);
-  box-shadow: 0 0 12px rgba(255, 211, 42, 0.25);
 }
 
 .tool-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.fullscreen-btn {
+  background: rgba(94, 242, 255, 0.16);
   border-color: var(--cyan);
   color: var(--cyan);
 }
@@ -496,7 +514,7 @@ body {
 }
 
 /* ============================================================================
- * 하단 트윈 스틱 & 스킬 버튼
+ * 하단 트윈 스틱 & 스킬 버튼 (세로 Portrait 최적화 아치 배치)
  * ============================================================================ */
 
 .controls-layer {
@@ -508,11 +526,11 @@ body {
 
 .stick-zone {
   position: absolute;
-  bottom: 26px;
-  width: 132px;
-  height: 132px;
+  bottom: 22px;
+  width: 112px;
+  height: 112px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(20, 28, 42, 0.55) 0%, rgba(12, 16, 24, 0.82) 100%);
+  background: radial-gradient(circle, rgba(20, 28, 42, 0.58) 0%, rgba(12, 16, 24, 0.85) 100%);
   border: 2px solid rgba(94, 242, 255, 0.32);
   display: flex;
   align-items: center;
@@ -522,46 +540,40 @@ body {
 }
 
 .left-stick {
-  left: 30px;
+  left: 16px;
 }
 
 .right-stick {
-  right: 30px;
+  right: 16px;
   border-color: rgba(255, 165, 2, 0.5);
-  background: radial-gradient(circle, rgba(48, 32, 18, 0.58) 0%, rgba(18, 14, 12, 0.84) 100%);
+  background: radial-gradient(circle, rgba(48, 32, 18, 0.6) 0%, rgba(18, 14, 12, 0.88) 100%);
 }
 
 .stick-zone.active {
   border-color: var(--cyan);
-  box-shadow: 0 0 18px rgba(94, 242, 255, 0.25);
+  box-shadow: 0 0 16px rgba(94, 242, 255, 0.3);
 }
 
 .right-stick.firing {
   border-color: var(--gold);
-  box-shadow: 0 0 22px rgba(255, 211, 42, 0.45);
+  box-shadow: 0 0 20px rgba(255, 211, 42, 0.5);
 }
 
 .stick-ring {
   position: absolute;
-  inset: 14px;
+  inset: 12px;
   border-radius: 50%;
   border: 1px dashed rgba(255, 255, 255, 0.15);
   pointer-events: none;
 }
 
 .stick-caption {
-  position: absolute;
-  bottom: -20px;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-dim);
-  white-space: nowrap;
-  pointer-events: none;
+  display: none;
 }
 
 .stick-knob {
-  width: 54px;
-  height: 54px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: rgba(94, 242, 255, 0.22);
   border: 2px solid var(--cyan);
@@ -569,28 +581,28 @@ body {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   color: var(--text-main);
   pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
 .right-stick .stick-knob {
-  background: rgba(255, 165, 2, 0.3);
+  background: rgba(255, 165, 2, 0.32);
   border-color: var(--gold);
 }
 
 .right-stick.firing .stick-knob {
-  background: rgba(255, 211, 42, 0.72);
+  background: rgba(255, 211, 42, 0.78);
   color: #0b0d0a;
   border-color: #ffffff;
 }
 
 .action-btn {
   position: absolute;
-  width: 64px;
-  height: 64px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: var(--panel-bg);
   border: 2px solid var(--panel-border);
@@ -603,20 +615,20 @@ body {
   cursor: pointer;
   pointer-events: auto;
   touch-action: none;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 }
 
 .action-btn:active {
-  transform: scale(0.93);
+  transform: scale(0.92);
 }
 
 .action-btn .btn-icon {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .action-btn .btn-name {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
   color: var(--text-main);
   white-space: nowrap;
@@ -624,14 +636,15 @@ body {
 
 .action-btn .btn-key {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 7.5px;
   font-weight: 800;
   color: var(--gold);
 }
 
+/* 🔄 재장전/충전 (R): 우측 스틱 좌측 */
 .reload-btn {
-  right: 184px;
-  bottom: 22px;
+  right: 140px;
+  bottom: 54px;
   border-color: rgba(94, 242, 255, 0.55);
 }
 
@@ -640,15 +653,17 @@ body {
   border-color: var(--purple);
 }
 
+/* ⚡ 기동 스킬 (Shift): 우측 스틱 좌측 상단 */
 .skill1-btn {
-  right: 170px;
-  bottom: 98px;
+  right: 88px;
+  bottom: 128px;
   border-color: rgba(123, 237, 159, 0.65);
 }
 
+/* 💥 필살기 2 (E): 우측 스틱 바로 위 */
 .skill2-btn {
-  right: 104px;
-  bottom: 166px;
+  right: 20px;
+  bottom: 148px;
   border-color: rgba(255, 71, 87, 0.75);
 }
 
@@ -658,24 +673,8 @@ body {
 }
 
 .bottom-guide {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(10, 14, 20, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 5px 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  white-space: nowrap;
-  pointer-events: none;
+  display: none;
 }
-
-.bottom-guide b {
-  color: var(--gold);
-}
-
 
 /* ============================================================================
  * [멀티플레이 핵심] 대기실(Waiting Room) & 방 목록/생성(Room Browser) 모달 스타일
@@ -1009,8 +1008,8 @@ body {
 
 .wait-body-grid,
 .rb-body-grid {
-  display: grid;
-  grid-template-columns: 1fr 1.15fr;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
@@ -1351,103 +1350,39 @@ body {
 }
 
 /* ============================================================================
- * 모바일 가로 뷰포트 & 세로 강제 가로 회전(.force-landscape) 초슬림 레이아웃 최적화
+ * 세로(Portrait) 모바일 뷰포트 반응형 레이아웃 최적화
  * ============================================================================ */
 
-.fullscreen-btn {
-  background: rgba(94, 242, 255, 0.18);
-  border-color: var(--cyan);
-  color: var(--cyan);
-}
-
-@media (max-width: 960px), (max-height: 540px) {
-  .bottom-guide {
-    display: none;
-  }
-
+@media (max-width: 480px) {
   .hud-top {
     top: 4px;
-    left: 6px;
-    right: 6px;
-    gap: 4px;
-  }
-
-  .hud-card {
-    padding: 4px 7px;
-  }
-
-  .soldier-status {
-    min-width: 158px;
-    max-width: 205px;
-    gap: 2px;
-  }
-
-  .status-header {
-    font-size: 10px;
-  }
-
-  .lv-badge {
-    font-size: 9px;
-    padding: 0 4px;
-  }
-
-  .bar-row {
-    gap: 5px;
-  }
-
-  .bar-label {
-    font-size: 9px;
-    width: 30px;
-  }
-
-  .bar-track {
-    height: 6px;
-  }
-
-  .bar-value {
-    font-size: 9px;
-    min-width: 48px;
-  }
-
-  .squad-roster {
-    margin-top: 2px;
-    padding-top: 3px;
-    font-size: 9px;
-    gap: 1px;
-    max-height: 36px;
-    overflow: hidden;
-  }
-
-  .mission-center {
-    gap: 8px;
-    padding: 4px 8px;
-  }
-
-  .metric-label {
-    font-size: 8px;
-  }
-
-  .metric-val,
-  .metric-val.online-badge,
-  .metric-val.alive-count {
-    font-size: 11px;
-  }
-
-  .hud-tools {
-    grid-template-columns: repeat(3, auto);
+    left: 4px;
+    right: 4px;
     gap: 3px;
   }
 
+  .hud-card {
+    padding: 3px 5px;
+  }
+
+  .status-header {
+    font-size: 9.5px;
+  }
+
+  .bar-value {
+    font-size: 8px;
+    min-width: 42px;
+  }
+
   .tool-btn {
-    font-size: 10px;
-    padding: 4px 6px;
-    white-space: nowrap;
+    font-size: 9px;
+    padding: 3px 4px;
   }
 
   .stick-zone {
-    bottom: 10px;
-    width: 102px;
-    height: 102px;
+    bottom: 18px;
+    width: 104px;
+    height: 104px;
   }
 
   .stick-knob {
@@ -1456,58 +1391,36 @@ body {
     font-size: 9px;
   }
 
-  .stick-caption {
-    display: none;
-  }
-
-  .left-stick {
-    left: 14px;
-  }
-
-  .right-stick {
-    right: 14px;
-  }
-
   .action-btn {
-    width: 50px;
-    height: 50px;
+    width: 48px;
+    height: 48px;
   }
 
   .action-btn .btn-icon {
     font-size: 13px;
   }
 
-  .action-btn .btn-name,
-  .action-btn .btn-key {
-    font-size: 8px;
-  }
-
   .reload-btn {
-    right: 130px;
-    bottom: 10px;
+    right: 126px;
+    bottom: 48px;
   }
 
   .skill1-btn {
-    right: 120px;
-    bottom: 68px;
-  }
-
-  .skill2-btn {
-    right: 68px;
+    right: 80px;
     bottom: 118px;
   }
 
-  .waiting-room-modal,
-  .room-browser-modal {
-    padding: 8px 12px;
-    gap: 6px;
-    max-height: 94%;
+  .skill2-btn {
+    right: 18px;
+    bottom: 136px;
   }
 
-  .auth-modal,
-  .create-room-modal {
-    max-height: 94%;
-    padding: 10px 14px;
+  .waiting-room-modal,
+  .room-browser-modal,
+  .create-room-modal,
+  .auth-modal {
+    padding: 8px 10px;
+    gap: 6px;
   }
 
   .wait-player-list,

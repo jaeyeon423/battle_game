@@ -1,7 +1,7 @@
 // ============================================================================
-// [Client] 원형 배틀로얄: 랜덤 무기 서바이벌 (CIRCLE ROYALE) Canvas 2D 렌더러
+// [Client] 원형 배틀로얄: 세로(Portrait) 모바일 서바이벌 Canvas 2D 렌더러
 // - 오프스크린 배경 타일 캐싱(arenaBgCanvas)으로 모바일 렌더링 부하 90% 이상 감소 (60FPS 보장)
-// - 모바일 화면 크기 기반 자동 시야 확장(viewScale) 및 카메라 360° 외곽 완전 추적
+// - 세로 화면(Portrait) 폭(360~430px)에 맞춘 최적 전술 시야(viewScale) 자동 계산
 // ============================================================================
 
 import { WORLD_CONFIG, resolveWeaponSpec } from '../shared/constants.js';
@@ -16,8 +16,8 @@ export class Renderer {
 
     this.camera = { x: WORLD_CONFIG.CENTER_X, y: WORLD_CONFIG.CENTER_Y, shake: 0 };
     this.viewScale = 1.0;
-    this.viewW = 1280;
-    this.viewH = 720;
+    this.viewW = 390;
+    this.viewH = 844;
     this.dpr = 1;
 
     this.arenaBgCanvas = null;
@@ -32,10 +32,7 @@ export class Renderer {
   resize(width, height) {
     const safeW = Math.max(1, width);
     const safeH = Math.max(1, height);
-    // 모바일 고해상도 기기에서 과도한 픽셀 셰이딩으로 인한 발열/프레임 드랍 방지 (최대 1.5x)
-    const isMobileScreen = Math.min(safeW, safeH) < 540;
-    const maxDpr = isMobileScreen ? 1.5 : 2.0;
-    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
 
     this.canvas.width = Math.floor(safeW * dpr);
     this.canvas.height = Math.floor(safeH * dpr);
@@ -43,19 +40,17 @@ export class Renderer {
     this.viewH = safeH;
     this.dpr = dpr;
 
-    // 모바일 작은 화면에서도 경기장이 넓게 한눈에 들어오도록 자동 줌아웃(FOV 확장)
-    if (safeH < 360) {
-      this.viewScale = 0.76;
+    // 세로(Portrait) 모드 최적화: 스마트폰 세로 화면 폭(360~430px)에서도
+    // 좌우 시야가 좁아지지 않도록 580px 이상의 전술 시야(FOV)를 안정적으로 확보!
+    if (safeW < safeH) {
+      this.viewScale = Math.min(1.0, Math.max(0.55, safeW / 580));
     } else if (safeH < 460 || safeW < 850) {
-      this.viewScale = 0.84;
+      this.viewScale = 0.82;
     } else {
       this.viewScale = 1.0;
     }
   }
 
-  /**
-   * 원형 경기장 바닥 타일(484회 drawImage)과 전술 그리드를 최초 1회만 오프스크린 캔버스에 구워 캐싱합니다.
-   */
   _ensureArenaBgCache() {
     if (this.arenaBgCanvas) return this.arenaBgCanvas;
     if (typeof document === 'undefined') return null;
@@ -109,7 +104,7 @@ export class Renderer {
     octx.stroke();
     octx.restore();
 
-    // 원형 경기장 외벽 강철 링도 정적 배경에 함께 구워둠
+    // 원형 경기장 외벽 강철 링
     octx.save();
     octx.strokeStyle = '#3d4656';
     octx.lineWidth = 10;
@@ -410,7 +405,6 @@ export class Renderer {
     if (focusTarget) {
       const fx = typeof focusTarget._renderX === 'number' ? focusTarget._renderX : focusTarget.x;
       const fy = typeof focusTarget._renderY === 'number' ? focusTarget._renderY : focusTarget.y;
-      // 경기장 외곽(700m) 어디로 이동하든 내 캐릭터가 화면 정중앙에 오도록 카메라 클램프를 680까지 확장!
       const targetCamX = clamp(
         fx,
         WORLD_CONFIG.CENTER_X - 680,
@@ -435,7 +429,7 @@ export class Renderer {
       this.camera.shake = 0;
     }
 
-    // 원형 경기장 바깥 배경 (심연의 블랙/네이비)
+    // 경기장 바깥 배경
     ctx.fillStyle = '#07090e';
     ctx.fillRect(0, 0, this.viewW, this.viewH);
 
@@ -446,20 +440,20 @@ export class Renderer {
     }
     ctx.translate(-Math.round(this.camera.x), -Math.round(this.camera.y));
 
-    // 1. 원형 경기장 바닥 & 자기장(Safe Zone) 렌더링 (캐시된 오프스크린 캔버스로 초고속 렌더링)
+    // 1. 원형 경기장 바닥 & 자기장 렌더링
     this._drawCircularArena(ctx, snapshot);
 
     // 2. 바닥 흔적
     this._drawGroundDetails(ctx);
 
-    // 3. 원형 경기장 지형지물 (고대 바위 기둥 / 나무 방책 / 폭발 화약통)
+    // 3. 지형지물
     if (snapshot.obstacles) {
       for (let i = 0; i < snapshot.obstacles.length; i++) {
         this._drawObstacle(ctx, snapshot.obstacles[i]);
       }
     }
 
-    // 4. 참가 생존자들 (탈락자 마커 -> 생존자 순으로 렌더링)
+    // 4. 참가 생존자들
     for (let i = 0; i < snapshot.players.length; i++) {
       const p = snapshot.players[i];
       if (!p.alive) {
@@ -475,10 +469,10 @@ export class Renderer {
       }
     }
 
-    // 5. 무기별 투사체(화살·검기·마법탄) 궤적 렌더링
+    // 5. 투사체
     this._drawBullets(ctx, snapshot.bullets);
 
-    // 6. 충격파, 파티클, 플로팅 텍스트
+    // 6. 특수 효과
     this._drawEffects(ctx, dt);
 
     ctx.restore();
@@ -496,7 +490,6 @@ export class Renderer {
       ctx.drawImage(bgCache, 0, 0);
     }
 
-    // [자기장 / 독가스 위험 구역] safeR 바깥 ~ arenaR 사이를 붉은 반투명 도넛으로 표시
     if (safeR < arenaR) {
       ctx.save();
       ctx.fillStyle = 'rgba(255, 45, 85, 0.24)';
@@ -507,7 +500,6 @@ export class Renderer {
       ctx.restore();
     }
 
-    // 안전지대(Safe Zone) 경계 링
     ctx.save();
     ctx.strokeStyle = safeR < arenaR ? '#ff4757' : 'rgba(94, 242, 255, 0.45)';
     ctx.lineWidth = 3.5;
@@ -581,7 +573,7 @@ export class Renderer {
     const w = Math.round((img ? img.width : 16) * scale);
     const h = Math.round((img ? img.height : 16) * scale);
 
-    // 1. 내 캐릭터 발밑 식별 서클 & 무기별 조준선
+    // 1. 내 캐릭터 발밑 식별 서클 & 조준선
     if (isLocal) {
       ctx.strokeStyle = 'rgba(94, 242, 255, 0.65)';
       ctx.lineWidth = 2;
@@ -651,7 +643,7 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(Math.round(px - 15), Math.round(py + 15), 30, 7);
 
-    // 3. 강철 수호(가드) 버프 오라 표시
+    // 3. 버프 / 상태이상
     if (p.guardBuffTimer > 0) {
       ctx.strokeStyle = 'rgba(255, 165, 2, 0.8)';
       ctx.lineWidth = 2.5;
@@ -678,7 +670,7 @@ export class Renderer {
       ctx.restore();
     }
 
-    // 4. 판타지 전사 본체 도트 렌더링
+    // 4. 본체 도트
     const facingRight = Math.cos(p.aimAngle) >= 0;
     ctx.save();
     ctx.translate(Math.round(px), Math.round(py));
@@ -686,7 +678,7 @@ export class Renderer {
     ctx.drawImage(img, Math.round(-w / 2), Math.round(-h / 2), w, h);
     ctx.restore();
 
-    // 5. 장착 무기 회전 및 전사 대검 휘두르기(Swing) 모션 렌더링
+    // 5. 무기 회전 및 참격 궤적
     if (wepImg) {
       const isSwinging = spec.isMelee && (p.swingVisualTimer > 0 || p.whirlwindTimer > 0);
       const swingScale = isSwinging ? 3.2 : (spec.isMelee ? 2.85 : 2.5);
@@ -750,7 +742,7 @@ export class Renderer {
       ctx.restore();
     }
 
-    // 6. 머리 위 이름 + 현재 들고 있는 랜덤 무기 아이콘 + HP 바 표시
+    // 6. 머리 위 이름 & 체력 바
     const bw = 44;
     const bh = 5;
     const bx = Math.round(px - bw / 2);
@@ -765,7 +757,7 @@ export class Renderer {
     ctx.fillStyle = isLocal ? '#5ef2ff' : '#ffd32a';
     ctx.fillText(`${spec.icon} ${p.name}`, Math.round(px), by - 4);
 
-    // 7. 차징 게이지 바 또는 재장전 게이지 바
+    // 7. 차징 게이지 또는 재장전 진행 바
     if (p.classId === 'bow' && p.bowCharge > 0) {
       const rbw = 46;
       const rbh = 5;

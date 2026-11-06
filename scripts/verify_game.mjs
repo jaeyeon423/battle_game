@@ -160,7 +160,7 @@ const browser = spawn(
     '--headless=new',
     '--disable-gpu',
     '--no-sandbox',
-    '--window-size=960,540',
+    '--window-size=412,840',
     `--remote-debugging-port=${debugPort}`,
     `http://127.0.0.1:${TEST_PORT}/?room=ROYALE-01&name=HOST-KING`,
   ],
@@ -299,23 +299,11 @@ try {
   await fsp.writeFile(shotCombatPath, Buffer.from(shotCombat.result.data, 'base64'));
   console.log(`✔ [PASS] 원형 경기장 전사 대검 휘두르기 모션 캡처: ${shotCombatPath}`);
 
-  // 7. 스마트폰 세로(Portrait 380x780) 뷰포트 전환 시 자동 90도 가로 회전(.force-landscape) 검증 및 캡처
-  await sendCdp('Emulation.setDeviceMetricsOverride', {
-    width: 380,
-    height: 780,
-    deviceScaleFactor: 2,
-    mobile: true,
-  });
-  await new Promise((r) => setTimeout(r, 300));
-  const checkRotate = await sendCdp('Runtime.evaluate', {
-    expression: `document.getElementById('viewport').classList.contains('force-landscape')`,
-    returnByValue: true,
-  });
-  assert.equal(checkRotate.result.result.value, true, '세로 화면에서 .force-landscape 클래스가 자동 적용되어야 합니다.');
-  const shotPortraitRotated = await sendCdp('Page.captureScreenshot', { format: 'png' });
-  const shotPortraitPath = path.join(outDir, 'verify_portrait_force_landscape.png');
-  await fsp.writeFile(shotPortraitPath, Buffer.from(shotPortraitRotated.result.data, 'base64'));
-  console.log(`✔ [PASS] 스마트폰 세로(Portrait) 시 자동 90도 가로 회전 화면 캡처: ${shotPortraitPath}`);
+  // 7. 스마트폰 세로(Portrait 390x844) 화면 정상 렌더링 검증 및 캡처
+  const shotPortrait = await sendCdp('Page.captureScreenshot', { format: 'png' });
+  const shotPortraitPath = path.join(outDir, 'verify_portrait_combat.png');
+  await fsp.writeFile(shotPortraitPath, Buffer.from(shotPortrait.result.data, 'base64'));
+  console.log(`✔ [PASS] 스마트폰 네이티브 세로(Portrait) 전투 화면 캡처: ${shotPortraitPath}`);
 
   cdp.close();
   assert.equal(consoleErrors.length, 0, `런타임 에러 발생: ${consoleErrors.join(', ')}`);

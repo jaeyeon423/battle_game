@@ -196,7 +196,7 @@ class GameClient {
     return bestAngle;
   }
 
-  async toggleFullscreenLandscape() {
+  async toggleFullscreen() {
     this.audio.unlock();
     try {
       const docEl = document.documentElement;
@@ -204,7 +204,7 @@ class GameClient {
         await docEl.requestFullscreen();
         if (screen.orientation && screen.orientation.lock) {
           try {
-            await screen.orientation.lock('landscape');
+            await screen.orientation.lock('portrait');
           } catch {}
         }
       } else if (document.fullscreenElement && document.exitFullscreen) {
@@ -443,7 +443,7 @@ class GameClient {
 
     // 1. 상단 HUD 버튼들
     $('fullscreenBtn')?.addEventListener('click', () => {
-      this.toggleFullscreenLandscape();
+      this.toggleFullscreen();
     });
 
     $('roomChangeBtn')?.addEventListener('click', () => {
@@ -630,25 +630,13 @@ class GameClient {
   }
 
   /**
-   * [핵심] 스마트폰이 세로(Portrait, innerHeight > innerWidth) 상태일 때도
-   * 무조건 가로(Landscape) 화면 비율로 고정 회전(.force-landscape)시켜 세로 찌그러짐을 원천 차단합니다!
+   * 모바일 세로(Portrait) 화면 크기에 맞춰 캔버스와 렌더러를 리사이즈합니다.
    */
   _handleResize() {
     const viewport = $('viewport');
     if (!viewport) return;
-
-    const winW = window.innerWidth;
-    const winH = window.innerHeight;
-    const isPortrait = winH > winW;
-
-    viewport.classList.toggle('force-landscape', isPortrait);
-    if (this.input) {
-      this.input.setRotatedPortrait(isPortrait);
-    }
-
-    const logicalW = isPortrait ? winH : winW;
-    const logicalH = isPortrait ? winW : winH;
-    this.renderer.resize(logicalW, logicalH);
+    const rect = viewport.getBoundingClientRect();
+    this.renderer.resize(rect.width, rect.height);
   }
 
   _loop(now) {
