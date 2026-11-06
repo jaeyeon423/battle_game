@@ -1,0 +1,665 @@
+/* ============================================================================
+ * CIRCLE ROYALE — 원형 배틀로얄 & 랜덤 무기 박스(Random Weapon Box) 스타일
+ * ============================================================================ */
+
+:root {
+  color-scheme: dark;
+  --bg-deep: #07090e;
+  --panel-bg: rgba(14, 18, 26, 0.88);
+  --panel-border: rgba(255, 211, 42, 0.35);
+  --cyan: #5ef2ff;
+  --gold: #ffd32a;
+  --amber: #ffa502;
+  --red: #ff4757;
+  --green: #7bed9f;
+  --purple: #a29bfe;
+  --text-main: #f1f2f6;
+  --text-dim: #95a5a6;
+  --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  font-family: var(--sans);
+  color: var(--text-main);
+}
+
+#viewport {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #07090e;
+}
+
+#arenaCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: crosshair;
+}
+
+/* ============================================================================
+ * 상단 HUD
+ * ============================================================================ */
+
+.hud-top {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 8px 12px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+}
+
+.soldier-status {
+  min-width: 256px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.callsign {
+  color: var(--gold);
+}
+
+.lv-badge {
+  font-family: var(--mono);
+  background: rgba(255, 211, 42, 0.16);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  width: 38px;
+  color: var(--text-dim);
+}
+
+.bar-track {
+  flex: 1;
+  height: 8px;
+  background: #141923;
+  border: 1px solid #2b3648;
+  position: relative;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  transition: width 0.08s linear;
+}
+
+.base-fill {
+  background: linear-gradient(90deg, #ff4757, #ffa502);
+}
+
+.hp-fill {
+  background: linear-gradient(90deg, #2ed573, #7bed9f);
+}
+
+.ammo-fill {
+  background: linear-gradient(90deg, #1e90ff, #5ef2ff);
+}
+
+.ammo-fill.reloading {
+  background: linear-gradient(90deg, #8e44ad, #a29bfe);
+}
+
+.bar-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 72px;
+  text-align: right;
+}
+
+.bar-value.reloading {
+  color: var(--amber);
+}
+
+.center-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.mission-center {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--mono);
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.metric-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+}
+
+.metric-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.metric-val.online-badge {
+  color: var(--cyan);
+  font-size: 13px;
+}
+
+.metric-val.wave {
+  color: var(--gold);
+}
+
+.metric-val.alive-count {
+  color: #ff6b81;
+  font-size: 16px;
+}
+
+.metric-val.kills {
+  color: var(--green);
+}
+
+.squad-roster {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.squad-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-dim);
+}
+
+.squad-member.me {
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.squad-member.dead {
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+
+.kill-feed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.kill-item {
+  background: rgba(14, 18, 26, 0.82);
+  border: 1px solid rgba(255, 71, 87, 0.45);
+  color: #ffd32a;
+  padding: 2px 10px;
+}
+
+/* 우측 상단 도구 버튼 */
+.hud-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.tool-btn {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-main);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.tool-btn.highlight-btn {
+  background: rgba(255, 211, 42, 0.2);
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 12px rgba(255, 211, 42, 0.25);
+}
+
+.tool-btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+/* ============================================================================
+ * [핵심 연출 1] 라운드 시작 랜덤 무기 박스(Random Weapon Box) 모달
+ * ============================================================================ */
+
+.random-box-overlay,
+.winner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.62);
+  backdrop-filter: blur(3px);
+  z-index: 25;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.random-box-overlay.hidden,
+.winner-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.random-box-modal {
+  width: min(650px, 92vw);
+  background: linear-gradient(180deg, rgba(20, 26, 38, 0.96) 0%, rgba(11, 15, 22, 0.98) 100%);
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 36px rgba(255, 211, 42, 0.35), 0 16px 40px rgba(0, 0, 0, 0.8);
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.box-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.box-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--cyan);
+  background: rgba(94, 242, 255, 0.14);
+  border: 1px solid rgba(94, 242, 255, 0.45);
+  padding: 2px 10px;
+  letter-spacing: 0.08em;
+}
+
+.box-header h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 14px rgba(255, 211, 42, 0.45);
+}
+
+.box-header p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.roulette-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.roulette-item {
+  background: rgba(24, 31, 46, 0.9);
+  border: 1px solid #354156;
+  padding: 9px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.08s ease;
+}
+
+.roulette-item .r-icon {
+  font-size: 20px;
+}
+
+.roulette-item b {
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.roulette-item small {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.roulette-item.spinning {
+  border-color: var(--cyan);
+  background: rgba(94, 242, 255, 0.18);
+  transform: scale(1.03);
+}
+
+.roulette-item.selected {
+  border: 2px solid var(--gold);
+  background: rgba(255, 211, 42, 0.24);
+  box-shadow: 0 0 18px rgba(255, 211, 42, 0.5);
+  transform: scale(1.05);
+}
+
+.roulette-item.selected b {
+  color: var(--gold);
+}
+
+.drawn-weapon-card {
+  width: 100%;
+  background: rgba(14, 19, 28, 0.95);
+  border: 1px dashed rgba(255, 211, 42, 0.55);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawn-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--gold);
+}
+
+.drawn-desc {
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.drawn-timer {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--cyan);
+}
+
+/* ============================================================================
+ * [핵심 연출 2] 최후의 1인 우승자 모달
+ * ============================================================================ */
+
+.winner-modal {
+  width: min(500px, 90vw);
+  background: linear-gradient(180deg, rgba(28, 24, 14, 0.96) 0%, rgba(14, 14, 18, 0.98) 100%);
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 40px rgba(255, 211, 42, 0.45);
+  padding: 24px 28px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.winner-crown {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--gold);
+  letter-spacing: 0.12em;
+}
+
+.winner-modal h2 {
+  margin: 0;
+  font-size: 28px;
+  color: #ffffff;
+  text-shadow: 0 0 16px rgba(255, 211, 42, 0.6);
+}
+
+.winner-weapon {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.winner-next {
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--cyan);
+}
+
+/* ============================================================================
+ * 하단 트윈 스틱 & 스킬 버튼
+ * ============================================================================ */
+
+.controls-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.stick-zone {
+  position: absolute;
+  bottom: 26px;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 28, 42, 0.55) 0%, rgba(12, 16, 24, 0.82) 100%);
+  border: 2px solid rgba(94, 242, 255, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.left-stick {
+  left: 30px;
+}
+
+.right-stick {
+  right: 30px;
+  border-color: rgba(255, 165, 2, 0.5);
+  background: radial-gradient(circle, rgba(48, 32, 18, 0.58) 0%, rgba(18, 14, 12, 0.84) 100%);
+}
+
+.stick-zone.active {
+  border-color: var(--cyan);
+  box-shadow: 0 0 18px rgba(94, 242, 255, 0.25);
+}
+
+.right-stick.firing {
+  border-color: var(--gold);
+  box-shadow: 0 0 22px rgba(255, 211, 42, 0.45);
+}
+
+.stick-ring {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+}
+
+.stick-caption {
+  position: absolute;
+  bottom: -20px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.stick-knob {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(94, 242, 255, 0.22);
+  border: 2px solid var(--cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-main);
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.right-stick .stick-knob {
+  background: rgba(255, 165, 2, 0.3);
+  border-color: var(--gold);
+}
+
+.right-stick.firing .stick-knob {
+  background: rgba(255, 211, 42, 0.72);
+  color: #0b0d0a;
+  border-color: #ffffff;
+}
+
+.action-btn {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.action-btn:active {
+  transform: scale(0.93);
+}
+
+.action-btn .btn-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.action-btn .btn-name {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.action-btn .btn-key {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.reload-btn {
+  right: 184px;
+  bottom: 22px;
+  border-color: rgba(94, 242, 255, 0.55);
+}
+
+.reload-btn.reloading {
+  background: rgba(162, 155, 254, 0.28);
+  border-color: var(--purple);
+}
+
+.skill1-btn {
+  right: 170px;
+  bottom: 98px;
+  border-color: rgba(123, 237, 159, 0.65);
+}
+
+.skill2-btn {
+  right: 104px;
+  bottom: 166px;
+  border-color: rgba(255, 71, 87, 0.75);
+}
+
+.action-btn.cooldown {
+  opacity: 0.48;
+  border-color: #57606f;
+}
+
+.bottom-guide {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 20, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 5px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.bottom-guide b {
+  color: var(--gold);
+}

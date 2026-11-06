@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>CIRCLE ROYALE · 원형 배틀로얄 (랜덤 무기 박스 서바이벌)</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <main id="viewport">
+    <!-- 메인 도트 픽셀 원형 경기장 캔버스 -->
+    <canvas id="arenaCanvas" aria-label="원형 배틀로얄 경기장"></canvas>
+
+    <!-- 상단 전술 HUD -->
+    <header class="hud-top">
+      <!-- 좌측 상단: 내 상태 & 참가 생존자 현황(8인) -->
+      <section class="hud-card soldier-status" aria-label="내 상태 및 생존자 현황">
+        <div class="status-header">
+          <span class="callsign" id="heroTitleText">🎲 SOLDIER-01 · 랜덤 무기</span>
+          <span class="lv-badge" id="tierBadgeText">RARE</span>
+        </div>
+
+        <div class="bar-row">
+          <span class="bar-label">HP</span>
+          <div class="bar-track">
+            <div class="bar-fill hp-fill" id="hpFill" style="width: 100%"></div>
+          </div>
+          <span class="bar-value" id="hpText">200 / 200</span>
+        </div>
+
+        <div class="bar-row">
+          <span class="bar-label" id="ammoLabel">AMMO</span>
+          <div class="bar-track">
+            <div class="bar-fill ammo-fill" id="ammoFill" style="width: 100%"></div>
+          </div>
+          <span class="bar-value" id="ammoText">30 / 30</span>
+        </div>
+
+        <div class="bar-row">
+          <span class="bar-label">RING</span>
+          <div class="bar-track">
+            <div class="bar-fill base-fill" id="baseFill" style="width: 100%"></div>
+          </div>
+          <span class="bar-value" id="baseText">680m</span>
+        </div>
+
+        <!-- 원형 경기장 생존자 로스터 (최후의 1인 추적) -->
+        <div class="squad-roster" id="squadRoster"></div>
+      </section>
+
+      <!-- 중앙 상단: 온라인 룸 & 생존 인원(ALIVE) & 자기장 상태 -->
+      <div class="center-stack">
+        <section class="hud-card mission-center" aria-label="배틀로얄 라운드 현황">
+          <div class="metric">
+            <span class="metric-label">ONLINE ARENA</span>
+            <span class="metric-val online-badge" id="roomStatusText">🟢 ROYALE-01 (1P)</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">ROUND</span>
+            <span class="metric-val wave" id="waveText">ROUND 01</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">ALIVE (생존)</span>
+            <span class="metric-val alive-count" id="aliveText">8 / 8</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">KILLS / WINS</span>
+            <span class="metric-val kills" id="killText">0K · 0W</span>
+          </div>
+        </section>
+
+        <!-- 실시간 킬로그 배너 -->
+        <div class="kill-feed" id="killFeedBox"></div>
+      </div>
+
+      <!-- 우측 상단: 랜덤박스 다시 뽑기 & 새 라운드 & 설정 -->
+      <nav class="hud-tools" aria-label="설정 및 테스트">
+        <button type="button" class="tool-btn highlight-btn" id="rerollBoxBtn">🎁 랜덤박스 다시 뽑기 (B)</button>
+        <button type="button" class="tool-btn" id="newRoundBtn">🔄 새 라운드 시작 (8인 전원 추첨)</button>
+        <button type="button" class="tool-btn" id="roomChangeBtn">📡 경기장 변경 (ROYALE-01)</button>
+        <button type="button" class="tool-btn" id="soundBtn">🔊 사운드 ON</button>
+      </nav>
+    </header>
+
+    <!-- [핵심 연출 1] 라운드 시작 시 화면 중앙에 뜨는 랜덤 무기 박스(룰렛) 모달 -->
+    <section class="random-box-overlay" id="randomBoxOverlay" aria-live="polite">
+      <div class="random-box-modal">
+        <div class="box-header">
+          <span class="box-badge" id="boxRoundBadge">ROUND 01 · BATTLE ROYALE</span>
+          <h2>🎁 RANDOM WEAPON BOX</h2>
+          <p id="boxSubText">원형 경기장 생존용 무작위 총기를 추첨하고 있습니다...</p>
+        </div>
+
+        <!-- 6종 총기 슬롯 룰렛 그리드 -->
+        <div class="roulette-grid" id="rouletteGrid">
+          <div class="roulette-item" data-weapon="rifle">
+            <span class="r-icon">🔫</span>
+            <b>AR-15 돌격소총</b>
+            <small>30발 연사 · M203 유탄</small>
+          </div>
+          <div class="roulette-item" data-weapon="shotgun">
+            <span class="r-icon">💥</span>
+            <b>M870 전술 산탄총</b>
+            <small>6펠릿 산탄 · 드래곤 브레스</small>
+          </div>
+          <div class="roulette-item" data-weapon="lmg">
+            <span class="r-icon">🔥</span>
+            <b>M249 중기관총</b>
+            <small>80발 탄통 · 탄막 난사</small>
+          </div>
+          <div class="roulette-item" data-weapon="sniper">
+            <span class="r-icon">🎯</span>
+            <b>AWM 대물저격총</b>
+            <small>초장거리 · 레일건 저격</small>
+          </div>
+          <div class="roulette-item" data-weapon="launcher">
+            <span class="r-icon">🚀</span>
+            <b>M32 유탄발사기</b>
+            <small>40mm 광역폭발 · 네이팜</small>
+          </div>
+          <div class="roulette-item" data-weapon="smg">
+            <span class="r-icon">⚡</span>
+            <b>KRISS 쌍기관단총</b>
+            <small>초고속 2연발 · 360° 스톰</small>
+          </div>
+        </div>
+
+        <!-- 당첨된 내 무기 상세 카드 -->
+        <div class="drawn-weapon-card" id="drawnWeaponCard">
+          <div class="drawn-title" id="drawnWeaponTitle">🎲 무기 추첨 중...</div>
+          <div class="drawn-desc" id="drawnWeaponDesc">최후의 1인이 남을 때까지 원형 경기장에서 살아남으세요!</div>
+          <div class="drawn-timer" id="drawnTimerText">전투 개시까지 3.0초</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- [핵심 연출 2] 최후의 1인(WINNER) 결정 시 우승자 발표 배너 -->
+    <section class="winner-overlay hidden" id="winnerOverlay" aria-live="assertive">
+      <div class="winner-modal">
+        <div class="winner-crown">🏆 LAST MAN STANDING 🏆</div>
+        <h2 id="winnerNameText">SOLDIER-01</h2>
+        <p class="winner-weapon" id="winnerWeaponText">획득 무기: 🎯 AWM 대물저격총 · 처치: 4킬</p>
+        <p class="winner-next" id="winnerNextText">잠시 후 다음 라운드 랜덤박스가 시작됩니다...</p>
+      </div>
+    </section>
+
+    <!-- 하단 가로모드 트윈 스틱 & 총기별 전술 스킬 버튼 레이어 -->
+    <section class="controls-layer" aria-label="전술 조작계">
+      <!-- 좌측 하단: 360도 이동 스틱 -->
+      <div class="stick-zone left-stick" id="leftStickZone" title="드래그하여 이동 (PC: WASD)">
+        <div class="stick-ring"></div>
+        <div class="stick-knob" id="leftStickKnob">MOVE</div>
+        <span class="stick-caption">이동 (WASD)</span>
+      </div>
+
+      <!-- 우측 하단 보조 버튼 3종: [탄창교체(R)] / [전술스킬 1(Shift)] / [화력스킬 2(E)] -->
+      <button type="button" class="action-btn reload-btn" id="reloadBtn" title="수동 탄창 교체 (R)">
+        <span class="btn-icon">🔄</span>
+        <span class="btn-name" id="reloadBtnName">탄창교체</span>
+        <span class="btn-key">R</span>
+      </button>
+
+      <button type="button" class="action-btn skill1-btn" id="skill1Btn" title="전술 기동 스킬 1 (Shift / Space)">
+        <span class="btn-icon">⚡</span>
+        <span class="btn-name" id="skill1Name">전술 구르기</span>
+        <span class="btn-key" id="skill1CdText">SHIFT</span>
+      </button>
+
+      <button type="button" class="action-btn skill2-btn" id="skill2Btn" title="총기 특수 화력 스킬 2 (E / Q)">
+        <span class="btn-icon">💥</span>
+        <span class="btn-name" id="skill2Name">특수 화력</span>
+        <span class="btn-key" id="skill2CdText">KEY E</span>
+      </button>
+
+      <!-- 우측 하단: 360도 수동 조준 및 사격 스틱 -->
+      <div class="stick-zone right-stick" id="rightStickZone" title="기울이는 방향으로 360° 조준 및 사격">
+        <div class="stick-ring"></div>
+        <div class="stick-knob" id="rightStickKnob">FIRE</div>
+        <span class="stick-caption">360° 조준·사격</span>
+      </div>
+
+      <!-- 하단 중앙 조작 안내 -->
+      <div class="bottom-guide">
+        <b>WASD</b>: 이동 · <b>우측스틱/좌클릭</b>: 사격 · <b>Shift</b>: 전술기동 · <b>E</b>: 특수화력 · <b>R</b>: 재장전 · <b>B</b>: 랜덤박스 다시뽑기
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./src/client/main.js"></script>
+</body>
+</html>
