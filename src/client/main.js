@@ -55,9 +55,13 @@ class GameClient {
     this._cachedKillFeedHtml = '';
     this._cachedWaitListHtml = '';
 
-    // 접속 시에는 방에 바로 들어가지 않고 로그인 -> 방 목록 순서로 진행
+    // 접속 시에는 방에 바로 들어가지 않고 닉네임 확인 -> 방 목록 순서로 진행
     this.localPlayerId = this.transport.connect(initName, initClass, initRoomParam, false);
     this.latestSnapshot = this.transport.displaySnapshot;
+
+    if (params.get('name')) {
+      setTimeout(() => this.submitNickname(), 80);
+    }
 
     // 로컬 랜덤박스 모달 표시 타이머 (전투 중 수동 다시 뽑기 시에만 사용)
     this.localBoxModalTimer = 0;
@@ -122,19 +126,18 @@ class GameClient {
 
     this.transport.onAuthSuccess((authMsg) => {
       this.isLoggedIn = true;
-      this.currentUser = authMsg.username || this.currentUser || 'hero01';
-      const finalNick = authMsg.nickname || this._getEnteredNickname() || this.currentUser;
+      const finalNick = authMsg.nickname || authMsg.username || this.currentUser || 'HERO-01';
+      this.currentUser = finalNick;
       try {
-        localStorage.setItem('cr_auth_user', this.currentUser);
         localStorage.setItem('cr_player_name', finalNick);
       } catch {}
 
       const waitInput = $('waitNicknameInput');
       if (waitInput) waitInput.value = finalNick;
-      this.isAdmin = Boolean(authMsg.isAdmin || this.currentUser.toLowerCase() === 'kim423');
+      this.isAdmin = Boolean(authMsg.isAdmin || finalNick.toLowerCase() === 'kim423' || finalNick === '재연킴');
       const rolePrefix = this.isAdmin ? '👑 운영자 · ' : '👤 ';
       const profileEl = $('lobbyUserProfileText');
-      if (profileEl) profileEl.textContent = `${rolePrefix}${finalNick} (${this.currentUser})`;
+      if (profileEl) profileEl.textContent = `${rolePrefix}${finalNick}`;
       const nickBtn = $('nicknameBtn');
       if (nickBtn) nickBtn.textContent = `✏️ ${finalNick}`;
 
@@ -268,46 +271,22 @@ class GameClient {
     });
   }
 
-  setAuthTab(mode) {
-    this.authMode = mode === 'signup' ? 'signup' : 'login';
-    $('tabLoginBtn')?.classList.toggle('active', this.authMode === 'login');
-    $('tabSignupBtn')?.classList.toggle('active', this.authMode === 'signup');
-    $('authNicknameField')?.classList.toggle('hidden', this.authMode !== 'signup');
-    const submitBtn = $('authSubmitBtn');
-    if (submitBtn) {
-      submitBtn.textContent =
-        this.authMode === 'signup'
-          ? '📝 회원가입 완료 및 방 목록 입장'
-          : '🚀 로그인하고 방 목록 입장';
-    }
-  }
-
-  submitAuth() {
+  submitNickname() {
     this.audio.unlock();
-    const rawUser = $('authUsernameInput')?.value.trim() || 'hero01';
-    const rawPass = $('authPasswordInput')?.value || '1234';
-    const rawNick =
-      this.authMode === 'signup'
-        ? $('authNicknameInput')?.value.trim() || rawUser.slice(0, 12)
-        : '';
-
-    this.transport.authenticate({
-      mode: this.authMode,
-      username: rawUser,
-      password: rawPass,
-      nickname: rawNick,
-    });
+    const rawNick = $('authNicknameInput')?.value.trim() || this.generateRandomNickname();
+    this.transport.setNickname(rawNick);
   }
 
   logout() {
     this.audio.unlock();
-    this.isLoggedIn = false;
-    this.inRoom = false;
-    this.transport.leaveRoom();
     this.closeRoomBrowser();
     this.closeCreateRoomModal();
-    $('waitingRoomOverlay')?.classList.add('hidden');
+    const nickInput = $('authNicknameInput');
+    if (nickInput && this.currentUser) {
+      nickInput.value = this.currentUser;
+    }
     $('authOverlay')?.classList.remove('hidden');
+    $('authNicknameInput')?.focus();
   }
 
   openRoomBrowser() {
@@ -437,13 +416,11 @@ class GameClient {
   }
 
   _bindUI() {
-    // 0. 로그인 / 회원가입 모달 이벤트
-    if (this.currentUser && $('authUsernameInput')) {
-      $('authUsernameInput').value = this.currentUser;
+    // 0. 간편 닉네임 입력 모달 이벤트
+    const nickInput = $('authNicknameInput');
+    if (nickInput) {
+      nickInput.value = this.currentUser || this.generateRandomNickname();
     }
-
-    $('tabLoginBtn')?.addEventListener('click', () => this.setAuthTab('login'));
-    $('tabSignupBtn')?.addEventListener('click', () => this.setAuthTab('signup'));
 
     $('authRandomNickBtn')?.addEventListener('click', () => {
       const rand = this.generateRandomNickname();
@@ -451,14 +428,12 @@ class GameClient {
     });
 
     $('authSubmitBtn')?.addEventListener('click', () => {
-      this.submitAuth();
+      this.submitNickname();
     });
 
-    ['authUsernameInput', 'authPasswordInput', 'authNicknameInput'].forEach((id) => {
-      $(id)?.addEventListener('keydown', (e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') this.submitAuth();
-      });
+    $('authNicknameInput')?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') this.submitNickname();
     });
 
     $('logoutBtn')?.addEventListener('click', () => {

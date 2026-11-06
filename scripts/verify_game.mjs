@@ -220,7 +220,7 @@ const browser = spawn(
     '--no-sandbox',
     '--window-size=412,840',
     `--remote-debugging-port=${debugPort}`,
-    `http://127.0.0.1:${TEST_PORT}/?room=ROYALE-01&name=HOST-KING`,
+    `http://127.0.0.1:${TEST_PORT}/`,
   ],
   { stdio: 'ignore' }
 );
@@ -254,7 +254,9 @@ try {
       pending.delete(data.id);
     }
     if (data.method === 'Runtime.exceptionThrown') {
-      consoleErrors.push(data.params?.exceptionDetails?.text || 'Exception');
+      const desc = data.params?.exceptionDetails?.exception?.description || data.params?.exceptionDetails?.text || 'Exception';
+      console.log('🔴 Captured exception:', desc);
+      consoleErrors.push(desc);
     }
   });
 
@@ -272,19 +274,17 @@ try {
   const outDir = path.join(ROOT_DIR, 'screenshots');
   await fsp.mkdir(outDir, { recursive: true });
 
-  // 1. 최초 접속 시 로그인 / 회원가입 화면(#authOverlay) 캡처
+  // 1. 최초 접속 시 닉네임 입력 모달(#authOverlay) 캡처
   await new Promise((r) => setTimeout(r, 800));
   const shotLogin = await sendCdp('Page.captureScreenshot', { format: 'png' });
   const shotLoginPath = path.join(outDir, 'verify_login.png');
   await fsp.writeFile(shotLoginPath, Buffer.from(shotLogin.result.data, 'base64'));
-  console.log(`✔ [PASS] 최초 접속 로그인/회원가입 화면 캡처: ${shotLoginPath}`);
+  console.log(`✔ [PASS] 최초 접속 닉네임 입력 모달 캡처: ${shotLoginPath}`);
 
-  // 2. 운영자 계정(kim423 / 1234 -> 닉네임 '재연킴') 로그인 -> 방 목록(#roomBrowserOverlay) 단독 화면 캡처
+  // 2. 닉네임('재연킴') 입력 후 [🚀 결투장 바로 입장하기] 클릭 -> 방 목록(#roomBrowserOverlay) 단독 화면 캡처
   await sendCdp('Runtime.evaluate', {
     expression: `
-      document.getElementById('tabLoginBtn').click();
-      document.getElementById('authUsernameInput').value = 'kim423';
-      document.getElementById('authPasswordInput').value = '1234';
+      document.getElementById('authNicknameInput').value = '재연킴';
       document.getElementById('authSubmitBtn').click();
     `,
   });
@@ -292,7 +292,7 @@ try {
   const shotBrowser = await sendCdp('Page.captureScreenshot', { format: 'png' });
   const shotBrowserPath = path.join(outDir, 'verify_room_browser.png');
   await fsp.writeFile(shotBrowserPath, Buffer.from(shotBrowser.result.data, 'base64'));
-  console.log(`✔ [PASS] 로그인 직후 방 리스트 화면(우측 상단 ➕ 방 만들기 버튼 포함) 캡처: ${shotBrowserPath}`);
+  console.log(`✔ [PASS] 닉네임 입력 직후 방 리스트 화면(우측 상단 ➕ 방 만들기 버튼 포함) 캡처: ${shotBrowserPath}`);
 
   // 3. 우측 상단 [➕ 방 만들기] 버튼 클릭 -> 새 방 만들기 전용 모달(#createRoomOverlay) 캡처
   await sendCdp('Runtime.evaluate', {

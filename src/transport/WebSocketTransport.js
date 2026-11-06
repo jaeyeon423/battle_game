@@ -220,27 +220,28 @@ export class WebSocketTransport {
     this.authErrorCallback = cb;
   }
 
-  authenticate({ mode = 'login', username = '', password = '', nickname = '' } = {}) {
-    const cleanUser = String(username || '').trim().slice(0, 16) || 'hero01';
-    const cleanNick = mode === 'signup' ? String(nickname || '').trim().slice(0, 12) : '';
-    if (cleanNick) this.playerName = cleanNick;
-
+  setNickname(nickname) {
+    const cleanNick = String(nickname || '').trim().slice(0, 14) || 'HERO-01';
+    this.playerName = cleanNick;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(
         JSON.stringify({
-          type: mode === 'signup' ? 'auth_signup' : 'auth_login',
-          username: cleanUser,
-          password,
+          type: 'set_nickname',
           nickname: cleanNick,
         })
       );
     } else {
       this.authCallback?.({
-        username: cleanUser,
+        username: cleanNick,
         nickname: cleanNick,
         rooms: [],
       });
     }
+  }
+
+  authenticate({ mode = 'login', username = '', password = '', nickname = '' } = {}) {
+    const cleanNick = String(nickname || username || '').trim().slice(0, 14) || 'HERO-01';
+    this.setNickname(cleanNick);
   }
 
   leaveRoom() {

@@ -92,44 +92,29 @@
     </header>
 
     <!-- ====================================================================== -->
-    <!-- [서비스 핵심 0] 최초 접속 로그인 / 회원가입 화면 (#authOverlay) -->
+    <!-- [서비스 핵심 0] 닉네임 입력 후 즉시 게임 입장 화면 (#authOverlay) -->
     <!-- ====================================================================== -->
     <section class="auth-overlay" id="authOverlay" aria-live="polite">
       <div class="auth-modal">
         <div class="auth-brand">
           <span class="auth-badge">⚔️ FANTASY BATTLE ROYALE</span>
           <h1>CIRCLE ROYALE</h1>
-          <p>모바일 1대1 & 배틀로얄 실시간 멀티플레이 결투장</p>
-        </div>
-
-        <div class="auth-tabs" role="tablist">
-          <button type="button" class="auth-tab-btn active" id="tabLoginBtn" data-mode="login">🔑 로그인</button>
-          <button type="button" class="auth-tab-btn" id="tabSignupBtn" data-mode="signup">📝 회원가입</button>
+          <p>원하는 닉네임을 입력하고 즉시 결투장에 입장하세요!</p>
         </div>
 
         <div class="auth-form">
-          <label class="rb-field">
-            <span>아이디 (ID)</span>
-            <input type="text" id="authUsernameInput" maxlength="16" placeholder="아이디 입력 (예: hero01)" autocomplete="username" />
-          </label>
-
-          <label class="rb-field">
-            <span>비밀번호 (Password)</span>
-            <input type="password" id="authPasswordInput" maxlength="20" placeholder="비밀번호 입력 (인증 없이 자유 입력)" autocomplete="current-password" />
-          </label>
-
-          <label class="rb-field hidden" id="authNicknameField">
-            <span>인게임 닉네임 (결투장 표시 이름)</span>
+          <label class="rb-field" id="authNicknameField">
+            <span>내 결투장 닉네임 (Nickname)</span>
             <div class="nickname-edit-row">
-              <input type="text" id="authNicknameInput" maxlength="12" placeholder="닉네임 입력 (미입력 시 자동 생성)" />
-              <button type="button" id="authRandomNickBtn" title="판타지 닉네임 추천">🎲</button>
+              <input type="text" id="authNicknameInput" maxlength="12" placeholder="닉네임 입력 (미입력 시 랜덤 생성)" autofocus />
+              <button type="button" id="authRandomNickBtn" title="판타지 닉네임 추천">🎲 랜덤</button>
             </div>
           </label>
 
-          <p class="auth-status-msg" id="authStatusMsg">별도 본인인증 없이 아이디만 입력하면 즉시 로그인/가입됩니다.</p>
+          <p class="auth-status-msg" id="authStatusMsg">로그인 없이 닉네임만 입력하면 즉시 게임을 즐길 수 있습니다.</p>
 
           <button type="button" class="start-game-primary-btn auth-submit-btn" id="authSubmitBtn">
-            🚀 로그인하고 방 목록 입장
+            🚀 결투장 바로 입장하기
           </button>
         </div>
       </div>
@@ -237,7 +222,7 @@
           <div class="rb-header-actions">
             <button type="button" class="rb-refresh-btn" id="refreshRoomsBtn">🔄 새로고침</button>
             <button type="button" class="create-room-top-btn" id="openCreateRoomModalBtn">➕ 방 만들기</button>
-            <button type="button" class="rb-close-btn" id="logoutBtn" title="로그아웃하고 로그인 화면으로">🚪 로그아웃</button>
+            <button type="button" class="rb-close-btn" id="logoutBtn" title="닉네임 변경">✏️ 닉네임 변경</button>
             <button type="button" class="rb-close-btn hidden" id="closeRoomBrowserBtn">✖ 닫기</button>
           </div>
         </div>

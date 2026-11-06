@@ -395,39 +395,27 @@ server.on('upgrade', (req, socket) => {
         return;
       }
 
-      if (msg.type === 'auth_login' || msg.type === 'auth_signup') {
-        const rawUser = String(msg.username || '').trim().slice(0, 16) || `user${nextClientCounter}`;
-        const key = rawUser.toLowerCase();
-        const rawPass = String(msg.password || '');
-        const rawNick = String(msg.nickname || '').trim().slice(0, 12);
-
-        let acc = userAccounts.get(key);
-        if (acc && acc.password && msg.type === 'auth_login' && rawPass !== acc.password) {
-          sendJson({
-            type: 'auth_error',
-            message: '비밀번호가 일치하지 않습니다.',
-          });
-          continue;
-        }
-
-        if (!acc) {
-          acc = {
-            username: rawUser,
-            password: rawPass,
-            nickname: rawNick || rawUser.slice(0, 12),
-            isAdmin: false,
-          };
-          userAccounts.set(key, acc);
-        } else if (msg.type === 'auth_signup' && rawNick) {
-          acc.nickname = rawNick;
-        }
+      if (
+        msg.type === 'auth_login' ||
+        msg.type === 'auth_signup' ||
+        msg.type === 'set_nickname' ||
+        msg.type === 'enter_lobby'
+      ) {
+        // [간편 닉네임 즉시 입장] 번거로운 아이디/비밀번호 없이 닉네임만으로 즉시 입장
+        const rawNick =
+          String(msg.nickname || msg.username || '').trim().slice(0, 14) ||
+          `HERO-${String(nextClientCounter).padStart(2, '0')}`;
+        const isAdmin =
+          rawNick.toLowerCase() === 'kim423' ||
+          rawNick === '재연킴' ||
+          rawNick.includes('운영자');
 
         sendJson({
           type: 'auth_ok',
           playerId,
-          username: acc.username,
-          nickname: acc.nickname,
-          isAdmin: Boolean(acc.isAdmin),
+          username: rawNick,
+          nickname: rawNick,
+          isAdmin,
           rooms: getRoomListSummary(),
         });
       } else if (msg.type === 'leave_room') {
