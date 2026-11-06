@@ -242,30 +242,31 @@ function getOrCreateRoom(roomId = 'ROYALE-01', options = {}) {
 }
 
 function getRoomListSummary() {
-  return Array.from(rooms.values()).map((r) => ({
-    roomId: r.roomId,
-    roomName: r.roomName,
-    hostId: r.sim.hostId,
-    hostName: r.getHostName(),
-    onlineCount: r.clients.size,
-    maxPlayers: r.maxPlayers,
-    roundState: r.sim.roundState,
-    botFillMode: r.sim.botFillMode,
-    round: r.sim.round,
-  }));
+  // 실제 참가자가 1명 이상 있는 활성 방만 목록에 노출 (상시 빈 방 완전 제거)
+  return Array.from(rooms.values())
+    .filter((r) => r.clients.size > 0)
+    .map((r) => ({
+      roomId: r.roomId,
+      roomName: r.roomName,
+      hostId: r.sim.hostId,
+      hostName: r.getHostName(),
+      onlineCount: r.clients.size,
+      maxPlayers: r.maxPlayers,
+      roundState: r.sim.roundState,
+      botFillMode: r.sim.botFillMode,
+      round: r.sim.round,
+    }));
 }
 
-// 기본 오픈 방 생성
-getOrCreateRoom('ROYALE-01', { roomName: '공식 1번 결투장', maxPlayers: 4 });
-
-// 서버 메인 물리 루프 (30Hz)
+// 서버 메인 물리 루프 (20Hz)
 setInterval(() => {
   for (const [roomId, room] of rooms.entries()) {
-    room.stepAndBroadcast();
-    // 기본 방이 아닌데 인원이 0명이면 정리
-    if (roomId !== 'ROYALE-01' && room.clients.size === 0) {
+    // 인원이 0명이면 방 즉시 완전 삭제 정리
+    if (room.clients.size === 0) {
       rooms.delete(roomId);
+      continue;
     }
+    room.stepAndBroadcast();
   }
 }, Math.round(1000 / SERVER_TICK_HZ));
 
@@ -423,7 +424,11 @@ server.on('upgrade', (req, socket) => {
           const prev = currentRoom;
           currentRoom = null;
           prev.removeClient(playerId);
-          prev.broadcastNow();
+          if (prev.clients.size === 0) {
+            rooms.delete(prev.roomId);
+          } else {
+            prev.broadcastNow();
+          }
         }
         sendJson({
           type: 'room_list',
@@ -442,11 +447,23 @@ server.on('upgrade', (req, socket) => {
           botFillMode: msg.botFillMode || 'auto',
         });
       } else if (msg.type === 'join') {
-        joinRoomInternal(msg.roomId || 'ROYALE-01', msg, {
-          roomName: msg.roomName,
-          maxPlayers: msg.maxPlayers,
-          botFillMode: msg.botFillMode,
-        });
+        const targetId = sanitizeRoomId(msg.roomId);
+        if (!rooms.has(targetId)) {
+          sendJson({
+            type: 'error_msg',
+            message: `방 [${targetId}]이 존재하지 않거나 이미 종료되었습니다.`,
+          });
+          sendJson({
+            type: 'room_list',
+            rooms: getRoomListSummary(),
+          });
+        } else {
+          joinRoomInternal(targetId, msg, {
+            roomName: msg.roomName,
+            maxPlayers: msg.maxPlayers,
+            botFillMode: msg.botFillMode,
+          });
+        }
       } else if (msg.type === 'list_rooms') {
         sendJson({
           type: 'room_list',
@@ -531,7 +548,12 @@ server.on('upgrade', (req, socket) => {
       const prevRoom = currentRoom;
       currentRoom = null;
       prevRoom.removeClient(playerId);
-      prevRoom.broadcastNow();
+      if (prevRoom.clients.size === 0) {
+        rooms.delete(prevRoom.roomId);
+        console.log(`[Room Deleted] Room [${prevRoom.roomId}] 인원 0명으로 자동 삭제됨`);
+      } else {
+        prevRoom.broadcastNow();
+      }
       console.log(
         `[Leave] ${playerId} 퇴장 -> Room [${prevRoom.roomId}] (남은 인원: ${prevRoom.clients.size}명, 새 방장: ${prevRoom.sim.hostId || '없음'})`
       );

@@ -322,7 +322,12 @@ class GameClient {
     if (!listEl) return;
 
     if (!this.availableRooms || this.availableRooms.length === 0) {
-      listEl.innerHTML = `<div class="rb-room-item"><div class="rb-room-info"><b>열려있는 방이 없습니다</b><small>우측 상단 [➕ 방 만들기]로 새 방을 만들어 방장이 되어보세요!</small></div></div>`;
+      listEl.innerHTML = `
+        <div class="rb-empty-state">
+          <div class="empty-icon">🏰</div>
+          <b>현재 열려있는 결투장 방이 없습니다.</b>
+          <p>상단 <b>[➕ 방 만들기]</b> 버튼을 눌러 첫 번째 결투장의 방장이 되어보세요!</p>
+        </div>`;
       return;
     }
 

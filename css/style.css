@@ -1314,6 +1314,34 @@ body {
 }
 
 /* 방 목록 아이템 카드 */
+.rb-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  background: rgba(16, 22, 34, 0.75);
+  border: 1px dashed rgba(94, 242, 255, 0.3);
+  border-radius: 8px;
+}
+
+.rb-empty-state .empty-icon {
+  font-size: 30px;
+}
+
+.rb-empty-state b {
+  font-size: 14px;
+  color: var(--text-main);
+}
+
+.rb-empty-state p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .rb-room-item {
   display: flex;
   align-items: center;
