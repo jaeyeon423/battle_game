@@ -218,6 +218,11 @@ body {
   font-size: 10px;
 }
 
+.metric-val.ping-badge {
+  color: #7bed9f;
+  font-size: 10px;
+}
+
 .metric-val.wave {
   color: var(--gold);
 }

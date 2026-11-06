@@ -51,12 +51,16 @@
         <div class="squad-roster" id="squadRoster"></div>
       </section>
 
-      <!-- 중앙 상단: 온라인 방 & 생존 인원(ALIVE) & 라운드 상태 -->
+      <!-- 중앙 상단: 온라인 방 & 핑 & 생존 인원(ALIVE) & 라운드 상태 -->
       <div class="center-stack">
         <section class="hud-card mission-center" aria-label="배틀로얄 라운드 현황">
           <div class="metric">
             <span class="metric-label">ROOM</span>
             <span class="metric-val online-badge" id="roomStatusText">🟢 ROYALE-01 (1P)</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">PING</span>
+            <span class="metric-val ping-badge" id="pingStatusText">--ms</span>
           </div>
           <div class="metric">
             <span class="metric-label">STATE</span>

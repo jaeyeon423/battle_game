@@ -34,6 +34,10 @@ export class WebSocketTransport {
     this.displaySnapshot = null;
     this.lastSendTime = 0;
     this.latestInputCmd = { moveX: 0, moveY: 0, aimAngle: 0, isFiring: false };
+
+    // 실시간 핑(Ping / RTT) 측정
+    this.currentPing = 0;
+    this.pingTimer = 0;
   }
 
   connect(playerName = '', classId = '', roomId = 'ROYALE-01', autoJoin = false) {
@@ -127,6 +131,13 @@ export class WebSocketTransport {
               onlineCount: this.onlineCount,
               maxPlayers: this.maxPlayers,
               localPlayerId: this.localPlayerId,
+            });
+          } else if (msg.type === 'pong') {
+            const rtt = Math.round(performance.now() - msg.t);
+            this.currentPing = Math.max(1, rtt);
+            this.statusCallback?.({
+              isOnline: true,
+              ping: this.currentPing,
             });
           } else if (msg.type === 'room_list' && Array.isArray(msg.rooms)) {
             this.roomListCallback?.(msg.rooms);
@@ -409,6 +420,15 @@ export class WebSocketTransport {
 
   tick(dt) {
     if (this.isOnline && this.displaySnapshot) {
+      // 2초마다 경량 핑(Ping-Pong) 전송하여 지연시간 정밀 측정
+      this.pingTimer += dt;
+      if (this.pingTimer >= 2.0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.pingTimer = 0;
+        try {
+          this.ws.send(JSON.stringify({ type: 'ping', t: performance.now() }));
+        } catch {}
+      }
+
       const canMove =
         this.displaySnapshot.roundState === 'combat' ||
         this.displaySnapshot.roundState === 'waiting';
@@ -418,7 +438,7 @@ export class WebSocketTransport {
         if (typeof p._renderY !== 'number') p._renderY = p.y;
 
         if (p.id === this.localPlayerId && p.alive && canMove) {
-          // [핵심] 내 캐릭터 클라이언트 측 즉시 이동 예측(Client-Side Prediction): 해외 서버 핑에서도 조이스틱 딜레이 0ms!
+          // [핵심 1] 내 캐릭터 클라이언트 즉시 이동 예측 (0ms 지연)
           const spec = resolveWeaponSpec(p.classId);
           const cmd = this.latestInputCmd || { moveX: 0, moveY: 0, aimAngle: p.aimAngle };
           p.aimAngle = cmd.aimAngle;
@@ -430,11 +450,11 @@ export class WebSocketTransport {
             mx /= len;
             my /= len;
           }
-          const spd = (p.speed || spec.speed || 225) * (p.slowTimer > 0 ? 0.6 : 1.0);
+          const spd = (p.speed || spec.speed || 230) * (p.slowTimer > 0 ? 0.6 : 1.0);
           p._renderX += mx * spd * dt;
           p._renderY += my * spd * dt;
 
-          // 원형 경기장 경계 클램핑
+          // 경기장 경계 클램핑
           const cx = WORLD_CONFIG.CENTER_X;
           const cy = WORLD_CONFIG.CENTER_Y;
           const maxR = WORLD_CONFIG.ARENA_RADIUS - 18;
@@ -445,19 +465,50 @@ export class WebSocketTransport {
             p._renderY = cy + Math.sin(ang) * maxR;
           }
 
-          // 서버 권위 위치(p.x, p.y)로 부드럽게 수렴 보정 (Reconciliation)
-          const reconcile = Math.min(1, dt * 10);
-          p._renderX = lerp(p._renderX, p.x, reconcile);
-          p._renderY = lerp(p._renderY, p.y, reconcile);
-        } else {
-          // 타 플레이어 및 AI 봇 위치 60fps 보간
-          const factor = Math.min(1, dt * 18);
+          // 장애물 클라이언트 즉시 슬라이딩 충돌 처리 (벽에 닿아도 튕김 방지)
+          if (this.displaySnapshot.obstacles) {
+            for (let i = 0; i < this.displaySnapshot.obstacles.length; i++) {
+              const obs = this.displaySnapshot.obstacles[i];
+              if (!obs.blocksMovement || obs.hp <= 0) continue;
+              const odx = p._renderX - obs.x;
+              const ody = p._renderY - obs.y;
+              const minDist = (p.radius || 15) + obs.radius;
+              const d2 = odx * odx + ody * ody;
+              if (d2 < minDist * minDist && d2 > 0.0001) {
+                const d = Math.sqrt(d2);
+                const push = minDist - d;
+                p._renderX += (odx / d) * push;
+                p._renderY += (ody / d) * push;
+              }
+            }
+          }
+
+          // 서버 권위 위치(p.x, p.y)와의 오차 부드러운 수렴 (Soft Reconciliation)
+          const errDist = Math.hypot(p._renderX - p.x, p._renderY - p.y);
+          if (errDist > 140) {
+            // 점멸/순간이동/라운드 시작 리셋 시 즉각 스냅
+            p._renderX = p.x;
+            p._renderY = p.y;
+          } else if (errDist > 0.5) {
+            // 미세 오차는 눈에 안 띄게 부드럽게 지수 보정하여 떨림 방지
+            const reconcile = Math.min(1, dt * 8.0);
+            p._renderX = lerp(p._renderX, p.x, reconcile);
+            p._renderY = lerp(p._renderY, p.y, reconcile);
+          }
+        } else if (p.alive) {
+          // [핵심 2] 타 플레이어 및 AI 봇: 60FPS 데드 레커닝 (Dead Reckoning) & 스무스 보간
+          // 패킷 간격 사이에서도 이전 속도(vx, vy)로 부드럽게 예측 전진
+          if (Math.hypot(p.vx || 0, p.vy || 0) > 1) {
+            p._renderX += (p.vx || 0) * dt;
+            p._renderY += (p.vy || 0) * dt;
+          }
+          const factor = Math.min(1, dt * 14);
           p._renderX = lerp(p._renderX, p.x, factor);
           p._renderY = lerp(p._renderY, p.y, factor);
         }
       }
 
-      // 투사체(화살/마법탄)도 30Hz 패킷 사이에서 60fps로 매끄럽게 전진 보간!
+      // 투사체(화살/마법탄)도 60fps로 매끄럽게 전진 렌더링
       if (this.displaySnapshot.bullets) {
         for (let i = 0; i < this.displaySnapshot.bullets.length; i++) {
           const b = this.displaySnapshot.bullets[i];

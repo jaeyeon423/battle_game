@@ -83,11 +83,26 @@ class GameClient {
       this.localPlayerId = status.localPlayerId || this.localPlayerId;
       const roomEl = $('roomStatusText');
       const roomBtn = $('roomChangeBtn');
+      const pingEl = $('pingStatusText');
+
+      if (typeof status.ping === 'number' && pingEl) {
+        const pVal = status.ping;
+        pingEl.textContent = `${pVal}ms`;
+        if (pVal <= 65) {
+          pingEl.style.color = '#7bed9f'; // 원활
+        } else if (pVal <= 140) {
+          pingEl.style.color = '#ffd32a'; // 보통
+        } else {
+          pingEl.style.color = '#ff4757'; // 지연
+        }
+      }
+
       if (status.isOnline) {
         if (roomEl) roomEl.textContent = `🟢 ${status.roomId} (${status.onlineCount}P)`;
         if (roomBtn) roomBtn.textContent = `🏠 방 목록`;
       } else {
         if (roomEl) roomEl.textContent = `⚪ OFFLINE`;
+        if (pingEl) pingEl.textContent = `0ms`;
       }
 
       if (status.isWelcome) {

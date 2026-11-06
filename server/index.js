@@ -14,7 +14,7 @@ import { WorldSimulation } from '../src/engine/WorldSimulation.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PORT) || 8080;
-const SERVER_TICK_HZ = 30; // 초당 30회 물리 시뮬레이션 및 스냅샷 브로드캐스트
+const SERVER_TICK_HZ = 20; // 초당 20회 최적화 틱 (Render 무료 티어 CPU 쓰로틀링 방지 및 60fps 클라이언트 보간 최적화)
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -523,6 +523,9 @@ server.on('upgrade', (req, socket) => {
       } else if (msg.type === 'switch_class' && currentRoom && msg.classId) {
         currentRoom.sim.switchPlayerClass(playerId, msg.classId);
         currentRoom.broadcastNow();
+      } else if (msg.type === 'ping') {
+        // [초저지연 핑-퐁] 클라이언트의 왕복 지연시간(RTT) 정밀 측정
+        sendJson({ type: 'pong', t: msg.t, serverTime: Date.now() });
       } else if (msg.type === 'toggle_party' && currentRoom) {
         const on = currentRoom.sim.setPartyMode(
           !currentRoom.sim.partyEnabled,
@@ -557,4 +560,14 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 웹 클라이언트 접속: http://localhost:${PORT}`);
   console.log(`🔌 실시간 WebSocket: ws://localhost:${PORT}/ws (${SERVER_TICK_HZ}Hz Tick)`);
   console.log(`====================================================================`);
+
+  // Render.com 무료 인스턴스 15분 비활성 슬립 방지용 자체 Keep-Alive
+  const externalUrl = process.env.RENDER_EXTERNAL_URL;
+  if (externalUrl) {
+    setInterval(() => {
+      http.get(`${externalUrl}/`, (res) => {
+        res.resume();
+      }).on('error', () => {});
+    }, 1000 * 60 * 12);
+  }
 });
