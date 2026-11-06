@@ -66,6 +66,7 @@ class GameClient {
 
     this.input = new InputController({
       canvas: this.canvas,
+      moveTouchPad: $('moveTouchPad'),
       leftZone: $('leftStickZone'),
       leftKnob: $('leftStickKnob'),
       rightZone: $('rightStickZone'),
@@ -668,6 +669,12 @@ class GameClient {
     const localPlayer =
       this.latestSnapshot?.players.find((p) => p.id === this.localPlayerId) ||
       this.latestSnapshot?.players[0];
+    if (localPlayer) {
+      localPlayer.isAiming = this.input.isAiming;
+      if (this.input.isAiming && typeof this.input.aimAngle === 'number') {
+        localPlayer.aimAngle = this.input.aimAngle;
+      }
+    }
     const screenPos = this.renderer.getPlayerScreenPos(localPlayer);
 
     const inputCmd = this.input.sampleInputCommand(screenPos.x, screenPos.y, dt);

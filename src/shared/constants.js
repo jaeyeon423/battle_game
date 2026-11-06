@@ -39,8 +39,8 @@ const WARRIOR_SPEC = {
   reloadLabel: '자세 정돈',
   hp: 580,                 // ★ 체력이 매우 높음 (궁수/마법사의 약 2배)
   damageReduction: 0.30,   // ★ 상시 피해 30% 경감
-  speed: 215,              // ★ 속도가 매우 빠름 (궁수 148, 마법사 142 대비 1.5배)
-  fireMoveMult: 0.95,
+  speed: 235,              // ★ 속도가 매우 빠름 (경쾌하고 민첩한 이동)
+  fireMoveMult: 0.98,
   radius: 15,
   isMelee: true,           // ★ 완전한 근접 공격 (원거리 투사체 없음!)
   meleeRange: 100,         // 근접 유효 사거리 (100px)
@@ -90,8 +90,8 @@ const ARCHER_SPEC = {
   reloadLabel: '화살 거치',
   hp: 330,                 // 보통 체력
   damageReduction: 0.05,
-  speed: 148,              // 보통 이동속도
-  fireMoveMult: 0.80,
+  speed: 180,              // ★ 기동성 강화 (기존 148 대비 쾌적한 이동)
+  fireMoveMult: 0.90,
   radius: 14,
   isMelee: false,
   maxAmmo: 1,              // ★ 탄창 단 1발!
@@ -140,8 +140,8 @@ const MAGE_SPEC = {
   reloadLabel: '마나 명상',
   hp: 300,                 // 낮은 체력
   damageReduction: 0.0,
-  speed: 142,              // 보통/약간 느림
-  fireMoveMult: 0.82,
+  speed: 175,              // ★ 기동성 강화 (기존 142 대비 쾌적한 이동)
+  fireMoveMult: 0.90,
   radius: 14,
   isMelee: false,
   maxAmmo: 100,            // 마나 100

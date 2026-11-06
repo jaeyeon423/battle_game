@@ -584,24 +584,37 @@ export class Renderer {
       if (spec.isMelee) {
         const reach = spec.meleeRange || 100;
         const halfArc = (spec.meleeArc || 1.85) * 0.5;
+        const isAiming = Boolean(p.isAiming);
         ctx.save();
-        ctx.strokeStyle = 'rgba(255, 165, 2, 0.36)';
-        ctx.lineWidth = 1.6;
-        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = isAiming ? '#ffd32a' : 'rgba(255, 165, 2, 0.36)';
+        ctx.lineWidth = isAiming ? 2.6 : 1.6;
+        ctx.setLineDash(isAiming ? [] : [6, 6]);
         ctx.beginPath();
         ctx.arc(px, py + 3, reach, p.aimAngle - halfArc, p.aimAngle + halfArc);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        const tipX = px + Math.cos(p.aimAngle) * (reach * 0.82);
-        const tipY = py + 3 + Math.sin(p.aimAngle) * (reach * 0.82);
-        ctx.fillStyle = 'rgba(255, 211, 42, 0.65)';
+        // 조준 중일 때 부채꼴 참격 범위 부드러운 채우기 연출
+        if (isAiming) {
+          ctx.fillStyle = 'rgba(255, 165, 2, 0.16)';
+          ctx.beginPath();
+          ctx.moveTo(px, py + 3);
+          ctx.arc(px, py + 3, reach, p.aimAngle - halfArc, p.aimAngle + halfArc);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // 조준 중심 화살표 촉
+        const tipX = px + Math.cos(p.aimAngle) * (reach * 0.88);
+        const tipY = py + 3 + Math.sin(p.aimAngle) * (reach * 0.88);
+        ctx.fillStyle = isAiming ? '#ffffff' : 'rgba(255, 211, 42, 0.65)';
         ctx.beginPath();
-        ctx.arc(tipX, tipY, 3, 0, Math.PI * 2);
+        ctx.arc(tipX, tipY, isAiming ? 4.5 : 3, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       } else {
         const isArcher = cls === 'archer' || cls === 'bow' || cls === 'crossbow';
+        const isAiming = Boolean(p.isAiming);
         const laserLen = p.isReloading ? 90 : (isArcher ? 520 : 340);
         const startX = px + Math.cos(p.aimAngle) * 18;
         const startY = py + Math.sin(p.aimAngle) * 18;
@@ -610,21 +623,30 @@ export class Renderer {
         const aimColor = spec.bulletColor || '#7bed9f';
 
         ctx.save();
-        ctx.strokeStyle = p.isReloading ? 'rgba(255, 165, 2, 0.35)' : `${aimColor}aa`;
-        ctx.lineWidth = p.isFiring ? 2.4 : 1.6;
-        ctx.setLineDash(isArcher ? [6, 6] : [4, 4]);
+        ctx.strokeStyle = p.isReloading ? 'rgba(255, 165, 2, 0.35)' : (isAiming ? '#ffffff' : `${aimColor}cc`);
+        ctx.lineWidth = isAiming ? 2.8 : (p.isFiring ? 2.4 : 1.6);
+        ctx.setLineDash(isAiming ? [] : (isArcher ? [6, 6] : [4, 4]));
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.lineTo(endX, endY);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.fillStyle = aimColor;
-        ctx.fillRect(Math.round(endX - 3), Math.round(endY - 3), 6, 6);
+        // 조준 화살표 촉 (Arrow Head)
+        const arrowLen = isAiming ? 12 : 8;
+        const arrowAng1 = p.aimAngle + Math.PI * 0.82;
+        const arrowAng2 = p.aimAngle - Math.PI * 0.82;
+        ctx.fillStyle = isAiming ? '#ffd32a' : aimColor;
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX + Math.cos(arrowAng1) * arrowLen, endY + Math.sin(arrowAng1) * arrowLen);
+        ctx.lineTo(endX + Math.cos(arrowAng2) * arrowLen, endY + Math.sin(arrowAng2) * arrowLen);
+        ctx.closePath();
+        ctx.fill();
 
         if (cls === 'mage' || cls === 'staff') {
-          ctx.strokeStyle = 'rgba(224, 86, 253, 0.4)';
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = isAiming ? 'rgba(224, 86, 253, 0.85)' : 'rgba(224, 86, 253, 0.4)';
+          ctx.lineWidth = isAiming ? 2.2 : 1.5;
           ctx.beginPath();
           ctx.arc(endX, endY, 38, 0, Math.PI * 2);
           ctx.stroke();

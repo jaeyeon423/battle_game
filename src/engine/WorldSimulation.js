@@ -226,6 +226,7 @@ export class WorldSimulation {
       moveY: 0,
       aimAngle: player.aimAngle,
       firePressed: false,
+      autoAim: false,
       isFiring: false,
       reloadPressed: false,
       skill1Pressed: false,
@@ -533,6 +534,7 @@ export class WorldSimulation {
       moveY: clamp(Number(inputCmd.moveY) || 0, -1, 1),
       aimAngle: typeof inputCmd.aimAngle === 'number' ? inputCmd.aimAngle : prev.aimAngle,
       firePressed: prev.firePressed || Boolean(inputCmd.firePressed || inputCmd.attackPressed),
+      autoAim: Boolean(inputCmd.autoAim),
       isFiring: Boolean(inputCmd.isFiring),
       reloadPressed: prev.reloadPressed || Boolean(inputCmd.reloadPressed),
       skill1Pressed: prev.skill1Pressed || s1,
@@ -834,8 +836,10 @@ export class WorldSimulation {
   _updatePlayer(p, input, dt) {
     const spec = resolveWeaponSpec(p.classId);
 
-    // [원탭 자동 조준 공격] 유저가 공격 버튼을 1회 누를 때 가장 가까운 적을 향해 자동 조준
-    if (input.firePressed && !p.isBot) {
+    // [조준 방향 결정: 사용자가 직접 조종한 각도 100% 최우선 존중]
+    // 1. 유저가 드래그/마우스로 직접 조종한 경우: input.aimAngle을 온전히 유지
+    // 2. 유저가 방향 조종 없이 제자리 탭(오토에임 플래그)을 요청했을 때만 가장 가까운 적을 탐색 보정
+    if (input.autoAim && !p.isBot) {
       const autoAngle = this._findNearestEnemyAngleForPlayer(p);
       if (typeof autoAngle === 'number' && !Number.isNaN(autoAngle)) {
         p.aimAngle = autoAngle;
@@ -1349,7 +1353,7 @@ export class WorldSimulation {
 
   }
 
-    _clampInsideCircularArena(entity) {
+  _clampInsideCircularArena(entity) {
     const dx = entity.x - this.centerX;
     const dy = entity.y - this.centerY;
     const dist = Math.hypot(dx, dy);
@@ -1357,6 +1361,17 @@ export class WorldSimulation {
     if (dist > maxR && dist > 0.001) {
       entity.x = this.centerX + (dx / dist) * maxR;
       entity.y = this.centerY + (dy / dist) * maxR;
+
+      // 외곽 벽에 부딪혔을 때 벽 바깥으로 향하는 속도를 제거하여 벽면을 타고 부드럽게 미끄러지도록 보정
+      if (typeof entity.vx === 'number' && typeof entity.vy === 'number') {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dot = entity.vx * nx + entity.vy * ny;
+        if (dot > 0) {
+          entity.vx -= dot * nx;
+          entity.vy -= dot * ny;
+        }
+      }
     }
   }
 
@@ -1407,8 +1422,19 @@ export class WorldSimulation {
       if (d2 < minDist * minDist && d2 > 0.0001) {
         const d = Math.sqrt(d2);
         const push = minDist - d;
-        entity.x += (dx / d) * push;
-        entity.y += (dy / d) * push;
+        const nx = dx / d;
+        const ny = dy / d;
+        entity.x += nx * push;
+        entity.y += ny * push;
+
+        // 장애물에 부딪혔을 때 장애물 중심 쪽으로 향하는 속도 성분을 제거하여 접선 방향으로 매끄럽게 미끄러지도록 보정
+        if (typeof entity.vx === 'number' && typeof entity.vy === 'number') {
+          const dot = entity.vx * nx + entity.vy * ny;
+          if (dot < 0) {
+            entity.vx -= dot * nx;
+            entity.vy -= dot * ny;
+          }
+        }
       }
     }
   }

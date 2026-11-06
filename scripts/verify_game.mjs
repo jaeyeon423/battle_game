@@ -102,9 +102,10 @@ testHero.aimAngle = 0; // 초기 각도는 0도 (오른쪽)
 targetEnemy.x = 800;
 targetEnemy.y = 1000; // 적은 영웅 바로 아래쪽 (+90도 = PI/2)
 
-// 1. 공격 버튼 1회 탭(firePressed: true): 가장 가까운 적(아래쪽 PI/2)을 향해 자동 조준 & 화살 발사
+// 1. 공격 버튼 1회 탭(firePressed: true, autoAim: true): 가장 가까운 적(아래쪽 PI/2)을 향해 자동 조준 & 화살 발사
 autoAimSim.applyInput('test_hero', {
   firePressed: true,
+  autoAim: true,
   isFiring: true,
   aimAngle: 0,
 });
@@ -123,12 +124,29 @@ testHero.isReloading = false;
 testHero.ammo = 1; // 재장전 완료 상태
 autoAimSim.applyInput('test_hero', {
   firePressed: false, // 손가락을 떼지 않고 누르고만 있음
+  autoAim: false,
   isFiring: true,
   aimAngle: expectedAngle,
 });
 autoAimSim.step(1 / 60);
 assert.equal(testHero.ammo, 1, '버튼을 꾹 누르고 있어도 1회 탭(firePressed) 없이는 자동 연속 발사되지 않아야 합니다.');
-console.log('✔ [PASS] 원탭 자동 조준 공격 및 홀드 시 연속 발사 차단 메커니즘 검증 완료');
+
+// 3. 사용자가 직접 조종한 방향으로 릴리즈 발사 검증 (적과 다른 방향 조준 시에도 각도 존중)
+testHero.fireCooldown = 0;
+testHero.isReloading = false;
+testHero.ammo = 1;
+const manualAimAngle = -Math.PI / 2; // 적이 있는 아래쪽이 아닌 위쪽으로 플레이어가 직접 조종
+autoAimSim.applyInput('test_hero', {
+  firePressed: true,
+  autoAim: false,
+  isFiring: true,
+  aimAngle: manualAimAngle,
+});
+autoAimSim.step(1 / 60);
+assert.equal(testHero.aimAngle, manualAimAngle, '사용자가 직접 조종한 조준 각도가 100% 최우선 존중되어야 합니다.');
+assert.equal(testHero.ammo, 0, '사용자가 조종한 방향으로 즉시 1회 발사되어야 합니다.');
+
+console.log('✔ [PASS] 원탭 자동 조준 공격, 사용자 방향 조종 릴리즈 발사, 홀드 시 연속 발사 차단 검증 완료');
 
 // 새 라운드 시작 후 최후의 1인 시뮬레이션 검증
 sim.startNewRound();

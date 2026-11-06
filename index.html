@@ -360,9 +360,12 @@
       </div>
     </section>
 
-    <!-- 하단 가로모드 모바일 트윈 스틱 & 무기별 스킬 버튼 레이어 -->
+    <!-- 하단 가로/세로 모바일 트윈 스틱 & 무기별 스킬 버튼 레이어 -->
     <section class="controls-layer" aria-label="전술 조작계">
-      <!-- 좌측 하단: 360도 이동 스틱 -->
+      <!-- 화면 좌측 절반 이동 터치 패드 (어디든 터치하면 즉시 플로팅 조이스틱 생성) -->
+      <div class="move-touch-pad" id="moveTouchPad" title="화면 좌측 어디든 터치하여 이동"></div>
+
+      <!-- 좌측: 360도 플로팅 이동 스틱 -->
       <div class="stick-zone left-stick" id="leftStickZone" title="드래그하여 이동">
         <div class="stick-ring"></div>
         <div class="stick-knob" id="leftStickKnob">MOVE</div>
@@ -388,16 +391,16 @@
         <span class="btn-key" id="skill2CdText">KEY E</span>
       </button>
 
-      <!-- 우측 하단: 원탭 자동 조준 공격 버튼 -->
-      <div class="stick-zone right-stick" id="rightStickZone" title="누를 때마다 가장 가까운 적을 향해 1회 공격">
+      <!-- 우측 하단: 드래그 방향 조준 & 릴리즈 발사 스틱 (브롤스타즈 방식) -->
+      <div class="stick-zone right-stick" id="rightStickZone" title="누른 채 드래그하여 방향 조종 ➔ 손을 떼면 발사 (가볍게 탭 시 즉시 발사)">
         <div class="stick-ring"></div>
-        <div class="stick-knob" id="rightStickKnob">⚔️ ATK</div>
-        <span class="stick-caption">원탭 공격</span>
+        <div class="stick-knob" id="rightStickKnob">⚔️ AIM</div>
+        <span class="stick-caption">조준·발사</span>
       </div>
 
       <!-- 하단 중앙 조작 안내 (PC 화면에서만 노출, 모바일에서는 자동 숨김) -->
       <div class="bottom-guide">
-        <b>WASD</b>: 이동 · <b>공격버튼/J/F/좌클릭</b>: 원탭 타겟팅 공격 · <b>Shift</b>: 기동스킬 · <b>E</b>: 필살기 · <b>R</b>: 재장전/명상
+        <b>WASD</b>: 이동 · <b>우측스틱/좌클릭</b>: 누르고 방향 조준 ➔ 떼면 발사 (가볍게 탭 시 즉발) · <b>Shift</b>: 기동스킬 · <b>E</b>: 필살기 · <b>R</b>: 재장전
       </div>
     </section>
   </main>
